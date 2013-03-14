@@ -1,0 +1,71 @@
+class Cold:
+
+## Member Functions: ##
+
+	OptionsFile([file])				# get/set options file
+	LogFile([file])					# get/set log file
+	SetOutpath(path)				# Set the Output Path for receiving files
+	SetFindFileMapRegex(regex)		# Set the Map Regex for argument --find-file
+	LoadOptions([file])				# Read user-defined options from file, or get current without arg
+	GetNRedundancyServers(serverlist, n, redundancyordering = 'default')
+									# Return a list up to length n of available servers using the current ordering
+	GetUsageStatistics()			# Get disk usage information about a file server
+
+	ListMaps()						# List the files in the map folder
+	CreateMap(path, mapfileoption = '')
+									# Create the map and cache files for the supplied path,
+
+	LookupPiece(path, serverlist)	# Return subset list of servers that have 'path' file available
+#	LookupFile(self, serverlist, mappath, filename='')
+#	LookupMap(self, serverlist, path)
+
+	ListFilePieces(self, mappath, filename)
+									# Get piece list given a map and file
+	ListMapFiles(self, mappath)		# Get file list given a map
+	PieceSplitByAvail(self, piecelist, serverlist=[])
+									# Return tuple of lists: pieces available vs unavailable on 'serverlist' servers
+	FileSplitByAvail(self, mappath, filename, serverlist=[])
+									# Return tuple of lists: files available vs unavailable on 'serverlist' servers
+
+	SendToCloud(path)				# Create map, send pieces to cloud from files in 'path'
+
+	ReceiveFromCloud(mappath, destpath = '', namelist = [])
+									# Collect & reassemble pieces to 'destpath'
+
+	# TODO: change FindFile's mapregex to be a list of maps, since FindMap() can convert a regex into a list of mapnames already
+	FindFile(filenameregex='[a-zA-Z0-9/\-._]*', mapregex='')
+									# Use regexes to print matching file names, optionally specifying a map regex
+	FindMap(mapregex='[a-zA-Z0-9/\-._]*')
+									# Use regex to print matching map names
+
+
+
+	## Member Variables: ##
+
+	String OptionsF = "options.txt"
+	String LogF = "log.txt"
+	String RepositoryPath = "./repository"
+	String CachePath = ModulePathAbs + "/.cache"
+	String Outpath = "."
+
+	Bool EnableServerCache = False
+
+	Bool PreserveEmptyFolders = True
+
+	Integer ServerFreeMinMB = 2048
+
+	Integer PieceSize = 2048
+	String PiecePath = "./pieces"
+	String MapPath = "./maps"
+	Integer MinimumRedundancy = 2
+	Integer MaximumRedundancy = 5
+	String RedundancyOrdering = "random"
+
+	List ServerList = []
+
+	Boolean EnableServerCache = False
+	Boolean VerboseOutput = True
+	Boolean DebugOutput = False
+	Boolean PretendMode = False
+
+	String FindFileMapRegex = ''

@@ -1,0 +1,44 @@
+client commands:
+pieces[] findfile(name)
+a function that contacts clients and updates availability statistics,
+ runnable routinely for information gathering
+a function that copies pieces from one server to another to meet
+ availability options
+  
+
+server api: (server is not a program, define the interface to manage the remote store)
+names[] listpieces()
+bool fileready(name) // check if the file's pieces are all available at the moment
+prunestorage(map) // delete all pieces on servers that aren't found in a list; data loss!
+speedtest(server) // figure the speed available between client and server
+
+
+
+
+
+Notes:
+
+procedure to add a file:
+  (optionally encrypt file)
+  divide file into equal pieces, or (perhaps) pad to size of single piece
+  rename piece to its md5
+  save map of file name to sequence of pieces, with byte offsets
+  check if pieces already exist in cloud
+  upload pieces needed to make file available and match availability settings
+  
+procedure to add a directory of files:
+  (optionally encrypt each file)
+  get size of each file, organize in a convenient way and make enough pieces to fit
+  flatten the files into pieces (equivalent to tar)
+  rename each piece to its md5
+  save map of file names to pieces required to reconstruct, with byte offsets
+  check if pieces already exist in cloud
+  upload pieces needed to make file available and match availability settings
+
+Example piece availability constraints:
+  must see every piece in x locations every x time
+  must have available at all times in x locations
+  must have available at all times between 8AM and 5PM
+  retry timed out servers at x time interval
+  count server as down after x downtime
+  make x piece available at a minimum of x transfer rate (proportional to # of hosts)

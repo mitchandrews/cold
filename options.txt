@@ -1,0 +1,63 @@
+### General options ###
+verbose = true
+debug = true
+logfile = cold.log.txt
+precache = false
+preserve-empty-folders = true
+
+
+# delete pieces stored locally after this many hours
+# (pieces deleted oldest first)
+%local-cache-age-limit = 24
+
+# delete pieces stored locally if cache is bigger than this in MB
+# (pieces deleted oldest first)
+%local-cache-size-limit = 20
+
+# map path contains both maps and atlases
+#	%created if it doesn't exist
+map-path = ./maps
+
+# created if it doesn't exist
+#cache-path = ./.cache
+
+# Piece size for map creation in KB
+piece-size = 1024
+
+### Server options ###
+
+# Choose either of these:
+server-free-minimum-mb = 2048
+%#server-free-minimum-gb = 2
+
+%server-repository-size-limit-mb = 1024
+minimum-redundancy = 1
+maximum-redundancy = 5
+
+#add-server cold@192.168.0.106:/home/cold/repository
+
+## Virtual IPs & VMs
+add-server cold1@192.168.0.201:/home/cold1/repository
+add-server cold2@192.168.0.202:/home/cold2/repository
+add-server cold3@192.168.0.203:/home/cold3/repository
+add-server cold4@192.168.0.204:/home/cold4/repository
+add-server cold5@192.168.0.205:/home/cold5/repository
+add-server cold6@192.168.0.206:/home/cold6/repository
+
+
+### redundancy ordering options: ###
+#	random				randomize the list before choosing
+#	usage-proportional	(default) use sha-1 hashspace algorithm
+#
+#	%fcfs				first come first server, as listed in options and then appended by arguments
+#	%latency			do ping tests or perhaps query previous test results
+#	%bandwidth			do throughput tests or perhaps query previous test results
+#	%size				do available space checks and start with servers with the most space
+redundancy-ordering = usage-proportional
+
+
+# Notes:
+# Create the 'cold' user with its own group (to sandbox cold from the
+# rest of the system)
+#  useradd -m -G cold cold
+#  newgrp - cold

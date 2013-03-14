@@ -1,0 +1,91 @@
+Cold Program Arguments:
+
+<IMPLEMENTED>
+
+-v, --verbose
+		verbose output
+
+-d, --debug
+		debug output
+
+-h, --help
+		print help and exit
+
+-f <options-file>, --options-file <options-file>
+		use <optionsfile> instead of "options.txt" to read settings
+
+--map-regex [regex]
+		option associated with --find-file
+		limits the maps searched for the specified file to those that
+			match the regex
+
+--find-file [filename_regex] <--map-regex [regex]>
+		prints the names of files matching the filename_regex, optionally
+			searching only maps whose names match --map-regex's argument
+		NOTE: variant should also be included for specific maps:
+			--find-file [filename_regex] <map> <...>
+
+-c, --create-map, create-atlas <file>
+		implied by -s
+		1) if file, <file>.map is created
+
+		2) if folder, <file>.atlas is created <NOT IMPLEMENTED>
+
+--list-files
+        display all files in all maps
+
+--list-map-contents [map]
+		display the files in the specified map file
+
+--list-maps
+		display available maps found in the options file defined map path
+
+
+-s, --send-to-cloud: Cloud.SendToCloud()
+		send a file to the cloud
+			1) create map
+			2) send to <minimum redundancy> number of servers
+				via specified ordering
+
+-r, --receive: Cloud.ReceiveFromCloud()
+		requires a supplied output path
+		receive a file from the cloud
+
+-o <output-path>, --outpath <output-path>
+		Set the directory for received files
+		Must be a directory
+		For now it will be created if it doesn't exist ($ mkdir -p)
+
+--show-usage
+--print-usage
+	print server available disk space information and quit
+
+--update-piece [piece]
+	make sure piece meets cloud requirements, such as minimum available
+
+--update-map [map]
+
+
+<NOT IMPLEMENTED>
+
+-o <option=val>, --option <option=val>
+		define an option
+		set an option manually via the shell
+		options:
+
+		-o mappath <path>:	set where to look for file maps
+							default: ./maps
+
+--piece-size <size>
+		override options file piece size for creating maps
+
+-p, --pretend
+		pretend
+		print what would be done, but dont actually do it
+
+-q
+		quick load
+		don't verify connectivity with servers before using
+
+
+-l:
