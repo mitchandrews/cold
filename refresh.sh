@@ -1,5 +1,4 @@
 #!/bin/bash
-#test
 
 if [[ "$1" == "-r" ]]
 then
