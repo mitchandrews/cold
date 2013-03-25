@@ -24,22 +24,21 @@ class RepositoryServer:
 	# String user
 	# String host
 	# String path
-	# String PieceCache[]
-	# Boolean CacheIsCurrent (default = False)
 	# %Integer pingresults[]
 	# Integer DfCache
 	# DfCacheIsCurrent (default = False)
 	# Integer ServerFreeMB (default = 2048)
 	# String HashSpaceLowerBound
 	# String HashSpaceUpperBound
+	# Integer RedundancyNo
+	# 
 
 	def __init__(self):
-		self.PieceCache = []
-		self.CacheIsCurrent = False
 		self.DfCache = -1
 		self.DfCacheIsCurrent = False
 		self.HashSpaceLowerBound = -1
 		self.HashSpaceUpperBound = -1
+		self.RedundancyNo = -1
 
 	def __eq__(self, s):
 		if self.host == s.get_host() and self.user == s.get_user() and self.path == s.get_path():
@@ -58,13 +57,9 @@ class RepositoryServer:
 		return self.host.strip()
 	def get_path(self):
 		return self.path.strip()
-	def SetHashSpaceLowerBound(self, lowerBound):
-		self.HashSpaceLowerBound = lowerBound
-	def SetHashSpaceUpperBound(self, upperBound):
-		self.HashSpaceUpperBound = upperBound
 
 	def print_info(self):
-		print "=== %s@%s:%s ===" % (self.user, self.host, self.path)
+		print "=== %s@%s:%s ===\n(( %d 0x%x:0x%x ))" % (self.user, self.host, self.path, self.RedundancyNo, self.HashSpaceLowerBound, self.HashSpaceUpperBound)
 
 
 
@@ -115,46 +110,61 @@ class RepositoryServer:
 		pass
 
 
-	# Purpose: given a path, determine if it exists and is a normal file,
-	#			this is done by querying the cache, and updating it if
-	#			necessary
-	# Returns:
-	#	Boolean		True if <path> is a normal file relative to self.path, False otherwise
-	def IsFile(self, path):
+	## Purpose: given a path, determine if it exists and is a normal file,
+	##			this is done by querying the cache, and updating it if
+	##			necessary
+	## Returns:
+	##	Boolean		True if <path> is a normal file relative to self.path, False otherwise
+	# def IsFile(self, path):
 
-		if self.CacheIsCurrent == True:
-			# iterate over each cache piece
-			for p in self.PieceCache:
-				if p == path:
-					return True
-			return False
+		# if self.CacheIsCurrent == True:
+			# # iterate over each cache piece
+			# for p in self.PieceCache:
+				# if p == path:
+					# return True
+			# return False
 
-		else:
-	#		if self.DebugOutput == True:
-			print "IsFile() Updating cache..."
+		# else:
+	# #		if self.DebugOutput == True:
+			# print "IsFile() Updating cache..."
 
-			# Update self.PieceCache and self.CacheIsCurrent
-			output,err = serverls(self.get_host(), self.get_user(), self.get_path())
+			# # Update self.PieceCache and self.CacheIsCurrent
+			# output,err = serverls(self.get_host(), self.get_user(), self.get_path())
 
-			if len(output) > 10000:
-				print "IsFile() ERROR: serverls(host=%s) returned %d results (>10000)" % (self.get_host(), len(output))
-				sys.exit()
+			# if len(output) > 10000:
+				# print "IsFile() ERROR: serverls(host=%s) returned %d results (>10000)" % (self.get_host(), len(output))
+				# sys.exit()
 
-			self.PieceCache = output
-			self.CacheIsCurrent = True
+			# self.PieceCache = output
+			# self.CacheIsCurrent = True
 
-	 #		if self.DebugOutput == True:
-			print "IsFile() Updated Piece Cache %s:" % self.get_host()
-			for p in self.PieceCache:
-				print "  " + p
+	 # #		if self.DebugOutput == True:
+			# print "IsFile() Updated Piece Cache %s:" % self.get_host()
+			# for p in self.PieceCache:
+				# print "  " + p
 
 
-			# iterate over each cache piece
-			for p in self.PieceCache:
-				if p == path:
-					return True
-			return False
-
+			# # iterate over each cache piece
+			# for p in self.PieceCache:
+				# if p == path:
+					# return True
+			# return False
+			
+	
+	def SetupPasswordlessSSH(self, host, user):
+	
+		# already done?
+		if HasPasswordlessSSH(host, user) == True:
+			return
+			
+		# start ssh-agent
+		
+		# if user doesnt have key, generate one
+		
+		
+		# run ssh-add
+		
+		
 
 	def SendFile(self, remotepath, localpath):
 		if not os.path.isfile(localpath):
@@ -181,6 +191,7 @@ class RepositoryServer:
 
 		return 0
 
+		
 	def RemoveFile(self, remotepath):
 		RemoveFileFromServer(self.get_host(), self.get_user(), remotepath)
 
@@ -189,5 +200,35 @@ class RepositoryServer:
 
 		# update free space info
 		self.Df()
+
+		return 0
+		
+		
+	# USAGE: this creates a list of pieces within (or outside of, if invert==true)
+	#		 the provided bounds ON THE REMOTE HOST.  It is NOT returned to
+	#		 the client machine
+	def ListPiecesByRange(self, lowerBound="0000000000000000000000000000000000000000", upperBound="ffffffffffffffffffffffffffffffffffffffff", invert=False):
+		if (self.host == "" or self.user == "" or self.path == ""):
+			return -1
+			
+		if (upperBound <= lowerBound):
+			return -1
+
+		# make hash list temp file
+		p = subprocess.Popen(['ssh', '-T', '-q', self.user + '@' + self.host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		p.communicate("rm /tmp/.cold.`whoami`.hashes.txt 2>/dev/null ; ls %s >/tmp/.cold.`whoami`.hashes.txt" % self.path)
+
+		# run shell script in /tmp on remote host that will filter hashes
+		p = subprocess.Popen(['ssh', '-T', '-q', self.user + '@' + self.host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if (invert == False):
+			#print "exec: /bin/bash /tmp/filter-sha1-inbounds.sh %s %s </tmp/.cold.%s.hashes.txt" % (`lowerBound`, `upperBound`, self.get_user())
+			p.communicate("/bin/bash /tmp/filter-sha1-inbounds.sh %s %s </tmp/.cold.`whoami`.hashes.txt" % (`lowerBound`, `upperBound`))
+		else:
+			#print "exec: /bin/bash /tmp/filter-sha1-outbounds.sh %s %s </tmp/.cold.%s.hashes.txt" % (`lowerBound`, `upperBound`, self.get_user())
+			p.communicate("/bin/bash /tmp/filter-sha1-outbounds.sh %s %s </tmp/.cold.`whoami`.hashes.txt" % (`lowerBound`, `upperBound`))
+		
+		# remove hash list temp file
+		p = subprocess.Popen(['ssh', '-T', '-q', self.user + '@' + self.host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		p.communicate("rm \"/tmp/.cold.%s.hashes.txt\" 2>/dev/null" % self.get_user())
 
 		return 0

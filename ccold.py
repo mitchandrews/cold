@@ -66,18 +66,19 @@ class Cold:
 		self.PiecePath = "./pieces"
 		self.MapPath = "./maps"
 		
-		# MaximumRedundancy only used with 'random'
-		self.MinimumRedundancy = 1
-		self.MaximumRedundancy = 5
+		# obsolete
+		#self.MinimumRedundancy = 1
+		#self.MaximumRedundancy = 5
 		#self.RedundancyOrdering = "random"
+		
+		self.Redundancy = 1
 		self.RedundancyOrdering = "usage-proportional"
 
 		# For 'usage-proportional', ServerList lists redundant servers
 		# together, for example, if there is 1 redundant servers among
 		# 3 total, A, A, B, with each letter representing a data set,
-		# they will be listed in ServerList in the order A, A, B. In
-		# this case 'MaximumRedundancy' is not used, 'MinimumRedundancy'
-		# defines the copy count.
+		# they will be listed in ServerList in the order A, A, B. 
+		# 'Redundancy' defines the copy count.
 		self.ServerList = []
 
 		self.VerboseOutput = True
@@ -236,48 +237,6 @@ class Cold:
 					print "setting log file: %s" % self.LogF
 				continue
 
-			# Server List
-			r = re.match(r'^[ \t]*add[-]?server[ \t]*(.*)$', j)
-			if r is not None:
-
-				# todo integrity checks here
-				#  (or conglomorate environment sanity check after loading file)
-
-				# regex to gather hostname
-				r = re.split('[ \t@:]+', j)
-				if len(r[1]) == 0:
-					print "ERROR: host in: " + j
-					sys.exit()
-				if len(r[2]) == 0:
-					print "ERROR: user in: " + j
-					sys.exit()
-				if len(r[3]) == 0:
-					print "ERROR: path in: " + j
-					sys.exit()
-
-				rs = RepositoryServer()
-				rs.set_user(r[1])
-				rs.set_host(r[2])
-				rs.set_path(r[3])
-
-				# Verify passwordless access to the server
-				if HasPasswordlessSSH(rs.get_host(), rs.get_user()):
-	#				print "SSH is passwordless!"
-					MuteSSHLogin(rs.get_host(), rs.get_user())
-				else:
-					print "Fatal Error: password required for SSH to %s@%s" % (rs.get_user(), rs.get_host())
-
-				# Check free space in MB, only add server if minimum is met
-				MBfree = rs.Df()/1024
-				if MBfree < float(self.ServerFreeMinMB):
-					print "WARNING: %s space low, not adding: %f MB < %d MB" % (rs.get_host(), MBfree, self.ServerFreeMinMB)
-					continue
-				self.ServerList.append(rs)
-				if self.DebugOutput == True:
-					rs.print_info()
-
-				continue
-
 			# Map path
 			r = re.match(r'^[ \t]*map[-]?path[ \t]*=[ \t]*(.*)$', j)
 			if r is not None:
@@ -306,25 +265,36 @@ class Cold:
 
 				continue
 
-			# Minimum Redundancy
-			r = re.match(r'^[ \t]*minimum[-]?redundancy[ \t]*=[ \t]*(.*)$', j)
+			# # Minimum Redundancy
+			# r = re.match(r'^[ \t]*minimum[-]?redundancy[ \t]*=[ \t]*(.*)$', j)
+			# if r is not None:
+				# if r.group(1).lower() != "":
+					# # todo integrity checks here
+					# self.MinimumRedundancy = int(r.group(1))
+					# if self.DebugOutput == True:
+						# print "setting minimum redundancy: " + str(self.MinimumRedundancy)
+
+				# continue
+
+			# # Maximum Redundancy
+			# r = re.match(r'^[ \t]*maximum[-]?redundancy[ \t]*=[ \t]*(.*)$', j)
+			# if r is not None:
+				# if r.group(1).lower() != "":
+					# # todo integrity checks here
+					# self.MaximumRedundancy = int(r.group(1))
+					# if self.DebugOutput == True:
+						# print "setting maximum redundancy: " + str(self.MaximumRedundancy)
+
+				# continue
+				
+			# Redundancy
+			r = re.match(r'^[ \t]*redundancy[ \t]*=[ \t]*(.*)$', j)
 			if r is not None:
 				if r.group(1).lower() != "":
 					# todo integrity checks here
-					self.MinimumRedundancy = int(r.group(1))
+					self.Redundancy = int(r.group(1))
 					if self.DebugOutput == True:
-						print "setting minimum redundancy: " + str(self.MinimumRedundancy)
-
-				continue
-
-			# Maximum Redundancy
-			r = re.match(r'^[ \t]*maximum[-]?redundancy[ \t]*=[ \t]*(.*)$', j)
-			if r is not None:
-				if r.group(1).lower() != "":
-					# todo integrity checks here
-					self.MaximumRedundancy = int(r.group(1))
-					if self.DebugOutput == True:
-						print "setting maximum redundancy: " + str(self.MaximumRedundancy)
+						print "setting redundancy: " + str(self.Redundancy)
 
 				continue
 
@@ -337,8 +307,8 @@ class Cold:
 						self.RedundancyOrdering = "random"
 						if self.DebugOutput == True:
 							print "setting redundancy ordering: " + self.RedundancyOrdering
-					elif r.group(1) == "fcfs":
-						self.RedundancyOrdering = "fcfs"
+					elif r.group(1) == "usage-proportional":
+						self.RedundancyOrdering = "usage-proportional"
 						if self.DebugOutput == True:
 							print "setting redundancy ordering: " + self.RedundancyOrdering
 
@@ -368,10 +338,351 @@ class Cold:
 						print "not preserving empty folders"
 				continue
 			# set more option variables here
+			
+		
+		
+		# Read previous server layout from "layout.txt"
+		OptionLines = ShellOutputLines('cat layout.txt')
+		for j in OptionLines:
+			r = re.match(r'^[ \t]*[^#](.*)$', j)
+			if r is not None:
+			
+				# todo integrity checks here
+				#  (or conglomorate environment sanity check after loading file)
+
+				# regex to gather hostname
+				r = re.split('[ \t@:]+', j)
+				if len(r[0]) == 0:
+					print "ERROR: user in: " + j
+					sys.exit()
+				if len(r[1]) == 0:
+					print "ERROR: host in: " + j
+					sys.exit()
+				if len(r[2]) == 0:
+					print "ERROR: path in: " + j
+					sys.exit()
+					
+				#print "Attempting to add server! %s %s %s %s %s %s" % (r[0], r[1], r[2], r[3], r[4], r[5])
+
+				rs = RepositoryServer()
+				rs.set_user(r[0])
+				rs.set_host(r[1])
+				rs.set_path(r[2])
+				
+				if len(r[3]) > 0:
+					rs.RedundancyNo = int(r[3])
+					
+				if len(r[4]) > 0:
+					rs.HashSpaceLowerBound = int(r[4], 16)
+				if len(r[5]) > 0:
+					rs.HashSpaceUpperBound = int(r[5], 16)
+
+				# Verify passwordless access to the server
+				if HasPasswordlessSSH(rs.get_host(), rs.get_user()):
+	#				print "SSH is passwordless!"
+					MuteSSHLogin(rs.get_host(), rs.get_user())
+				else:
+					print "Fatal Error: password required for SSH to %s@%s" % (rs.get_user(), rs.get_host())
+
+				# Check free space in MB, only add server if minimum is met
+				MBfree = rs.Df()/1024
+				if MBfree < float(self.ServerFreeMinMB):
+					print "WARNING: %s space low, not adding: %f MB < %d MB" % (rs.get_host(), MBfree, self.ServerFreeMinMB)
+					continue
+					
+				self.ServerList.append(rs)
+				if self.DebugOutput == True:
+					rs.print_info()
+
+				continue
 
 #	LoadOptions = Callable(LoadOptions)
 
 
+	# PURPOSE: Add a server to the unassigned list.  Must call ConsolidateLayout()
+	#			manually to include in lineup and activate
+	#
+	#	* server_string format: user@host:path
+	def AddServer(self, server_string):
+		server_string = server_string.strip()
+		
+		r = re.split('[@:]+', server_string)
+		if len(r[0]) == 0:
+			print "ERROR: user in: " + server_string
+			sys.exit()
+		if len(r[1]) == 0:
+			print "ERROR: host in: " + server_string
+			sys.exit()
+		if len(r[2]) == 0:
+			print "ERROR: path in: " + server_string
+			sys.exit()
+			
+		# Check if it already exists
+		for s in self.ServerList:
+			if s.get_user() == r[0] and s.get_host() == r[1] and s.get_path() == r[2]:
+				print "Warning: Server already exists; skipping!"
+				return 1
+
+		rs = RepositoryServer()
+		rs.set_user(r[0])
+		rs.set_host(r[1])
+		rs.set_path(r[2])
+
+		# Verify passwordless access to the server
+		if HasPasswordlessSSH(rs.get_host(), rs.get_user()):
+#			print "SSH is passwordless!"
+			MuteSSHLogin(rs.get_host(), rs.get_user())
+		else:
+			print "Fatal Error: password required for SSH to %s@%s" % (rs.get_user(), rs.get_host())
+
+		# Check free space in MB, only add server if minimum is met
+		MBfree = rs.Df()/1024
+		if MBfree < float(self.ServerFreeMinMB):
+			print "WARNING: %s space low, not adding: %f MB < %d MB" % (rs.get_host(), MBfree, self.ServerFreeMinMB)
+			return 1
+			
+		self.ServerList.append(rs)
+		if self.DebugOutput == True:
+			rs.print_info()
+			
+		# Write information to layout.txt
+		with open("layout.txt", "a") as f:
+			f.write("%s@%s:%s:-1:-1:-1\n" % (rs.get_user(), rs.get_host(), rs.get_path()))
+
+		return 0
+		
+	
+	def ConsolidateLayout(self, growOnly=True):
+		
+		if growOnly == False:
+		
+			# If can't connect, set hash info to -1 and ignore
+			upServers = []
+			for s in self.ServerList:
+				if not IsHostAlive(s.get_host()):
+					print "ConsolidateLayout(): host down: %s" % (s.get_host())
+					s.RedundancyNo = -1
+					s.HashSpaceLowerBound = -1
+					s.HashSpaceUpperBound = -1
+				else:
+					upServers.append(s)
+					
+			# If doesn't have minimum free space, set hash info to -1 and ignore
+			availServers = []
+			for s in upServers:
+				if (s.Df()/1024) < self.ServerFreeMinMB:
+					print "ConsolidateLayout(): host full: %s" % (s.get_host())
+					s.RedundancyNo = -1
+					s.HashSpaceLowerBound = -1
+					s.HashSpaceUpperBound = -1
+				else:
+					availServers.append(s)
+			
+			# iterate through servers, checking for any that are out of range for
+			# the configured number of bands.  This happens when the user changes
+			# the number of bands before calling --consolidate-layout.
+			for s in self.ServerList:
+				if s.RedundancyNo >= self.Redundancy:
+					print "freeing server %s from band %d" % (s.get_host(), s.RedundancyNo)
+					s.RedundancyNo = -1
+					s.HashSpaceLowerBound = -1
+					s.HashSpaceUpperBound = -1
+					availServers.append(s)
+					# TODO: remove all pieces from freed server, update DfCache
+					
+				
+			# save all previous layout information
+			for s in self.ServerList:
+				s.PrevRedundancyNo = s.RedundancyNo
+				s.PrevHashSpaceLowerBound = s.HashSpaceLowerBound
+				s.PrevHashSpaceUpperBound = s.HashSpaceUpperBound
+			
+			
+			# Create list of total free space for each RedundancyNo
+			freeSpace = []
+			curRedundancyNo = 0
+			while curRedundancyNo < self.Redundancy:
+				total = 0
+				for s in availServers:
+					if s.RedundancyNo == curRedundancyNo:
+						total = total + s.DfCache
+				freeSpace.append(total)
+				curRedundancyNo = curRedundancyNo + 1
+
+			
+			# Order available servers by free space, desc
+			orderedAvailServers = []
+			i=0
+			while i < len(availServers) > 0:
+				largest_freespace_i = 0
+				largest_freespace_size = 0
+				
+				for s in availServers:
+					if orderedAvailServers.count(availServers.index(s)) > 0:
+						continue
+					if s.DfCache > largest_freespace_size:
+						largest_freespace_i = availServers.index(s)
+						largest_freespace_size = s.DfCache
+						
+				print "appending largest index: %d (%d)" % (largest_freespace_i, largest_freespace_size)
+				orderedAvailServers.append(largest_freespace_i)
+				i = i + 1
+
+			
+			# debug output available servers ordered by free space, desc:
+			if self.DebugOutput == True:
+				print "free space order:"
+				for s in orderedAvailServers:
+					print "%s %d" % (availServers[s].get_host(), availServers[s].DfCache)
+					#print "%s [%d] (%d), " % (availServers[s].get_host(), availServers.index(s), availServers[s].DfCache),
+				print ""
+			
+				
+			# create empty lists for new layout
+			newLayoutLists = []
+			for x in range(0,self.Redundancy):
+				newLayoutLists.append([])
+			
+			# iterate through available & working servers and set each's
+			# new redundancy number
+			for s in orderedAvailServers:
+			
+				# find the index of the layout band with the smallest sum
+				smallest_band_i = 0
+				smallest_band_size = 9999999999999999999
+				for l in newLayoutLists:
+					bandSizeSum = 0
+					for x in l:
+						bandSizeSum = bandSizeSum + availServers[x].DfCache
+					if bandSizeSum < smallest_band_size:
+						smallest_band_i = newLayoutLists.index(l)
+						smallest_band_size = bandSizeSum
+					
+				# append index to the smallest layout band
+				newLayoutLists[smallest_band_i].append(s)
+				print "adding %s to band %d, new size: %d" % (availServers[s].get_host(), smallest_band_i, smallest_band_size + availServers[s].DfCache)
+				availServers[s].RedundancyNo = smallest_band_i
+				
+			# debug print indices of new layout
+			if self.DebugOutput == True:
+				print "New layout (by index):"
+				for l in newLayoutLists:
+					print "band %d: " % newLayoutLists.index(l),
+					for i in l:
+						print " %d" % i,
+					print ""
+					
+			# TODO: touch file indicating consolidation started
+			# (for startup sanity checking, not implemented)
+			# and take server offline
+			
+
+			# debug
+			for s in self.ServerList:
+				print "%s band: %d" % (s.get_host(), s.RedundancyNo)
+					
+			# recalculate bounds
+			self.RecalculateBounds()
+			
+			# debug print new bounds
+			print "New Bounds & All Pieces:"
+			for s in self.ServerList:
+				s.print_info()
+				#s.ListPiecesByRange("4444444444444444444444444444444444444444", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+			
+			## MOVE PIECES ##
+			
+			
+			
+			## create list of local pieces to move to each other server in same band
+			
+			for s in orderedAvailServers:
+				availServers[s].MoveTo = []
+				
+				availServers[s].SendFile("/tmp/", "filter-sha1-inbounds.sh")
+				availServers[s].SendFile("/tmp/", "filter-sha1-outbounds.sh")
+				
+				# find pieces not matching range s.PrevHashSpaceLowerBound, s.PrevHashSpaceUpperBound
+				pieceListToMove = availServers[s].ListPiecesByRange("%x" % availServers[s].PrevHashSpaceLowerBound, "%x" % availServers[s].PrevHashSpaceUpperBound, False)
+				
+				#availServers[s].RemoveFile("/tmp/filter-sha1-inbounds.sh")
+				#availServers[s].RemoveFile("/tmp/filter-sha1-outbounds.sh")
+			
+				continue #debug
+				
+				
+				#for each other server:
+				for o in orderedAvailServers:
+					if availServers[o] == availServers[s]:
+						continue
+					availServers[s].MoveTo.append([])
+					#if server is in same band as s:
+					if availServers[o].RedundancyNo == availServers[s].RedundancyNo:
+						# grep local pieces that should be moved there,
+						pieceListThisServer = availServers[s].ListPiecesByRange(availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
+				 		#and append results to MoveTo list
+						for p in pieceListThisServer:
+							availServers[s].MoveTo[orderedAvailServers.index(availServers[o])].append(int(p))
+							print "moving piece %x to %s (%x, %x)" % (int(p), availServers[o].get_host(), availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
+			
+			
+			## create list of local pieces to move to each new band
+			# prevBandCount = max(self.ServerList[].RedundancyNo)
+			# newBandCount = self.Redundancy - prevBandCount
+			# if newBandCount > 0:
+			#	for s in orderedAvailServers:
+			#		sizeToSend = float((s.HashSpaceUpperBound - s.HashSpaceLowerBound) / (prevBandCount+1))
+			#		for p in range(0, prevBandCount):
+			#			if p == 0:	# make sure the endpoints match up exactly with existing bounds
+			#				lowerBoundToSend = s.HashSpaceLowerBound
+			#				upperBoundToSend = lowerBoundToSend + sizeToSend
+			#			elif p == (prevBandCount-1):
+			#				lowerBoundToSend = s.HashSpaceUpperBound - sizeToSend
+			#				upperBoundToSend = s.HashSpaceUpperBound
+			#			else:
+			#				lowerBoundToSend = s.HashSpaceLowerBound + (sizeToSend * orderedAvailServers.index(s))
+			#				upperBoundToSend = lowerBoundToSend + sizeToSend
+			#		
+			
+			# write new layout to file
+			
+			# remove lock file
+			
+			
+			
+			
+			
+	def RecalculateBounds(self):
+		
+		curBand = 0
+		while curBand < self.Redundancy:
+			
+			# sum available space in this band
+			totalSize = 0
+			for s in self.ServerList:
+				if s.RedundancyNo == curBand:
+					totalSize = totalSize + s.DfCache
+					
+			print "band %d total size: %d" % (curBand, totalSize)
+					
+			# update each server in band with new bounds
+			hashLowerBound = 0
+			for s in self.ServerList:
+				if s.RedundancyNo == curBand:
+					spacePercentage = (float(s.DfCache) / float(totalSize))
+					hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(s.DfCache) / float(totalSize)) + hashLowerBound - 1
+					if hashUpperBound > 0xfffffffffffff000000000000000000000000000:
+						hashUpperBound = 0xffffffffffffffffffffffffffffffffffffffff
+					s.HashSpaceLowerBound = hashLowerBound
+					s.HashSpaceUpperBound = hashUpperBound
+				
+					print "%s hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (s.get_host(), spacePercentage, hashLowerBound, hashUpperBound)
+			
+					hashLowerBound = hashUpperBound + 1
+			curBand = curBand + 1
+
+			
+			
 	# PURPOSE: given a list of servers, return the list of servers that are in self.ServerList
 	#			and NOT in the supplied list; i.e. return the complement of the list
 	def GetComplementServerList(self, serverlist):
@@ -460,14 +771,20 @@ class Cold:
 		# print hashspace information
 		hashLowerBound = 0
 		for s in self.ServerList:
-			spacePercentage = float(float(FreeSpace[self.ServerList.index(s)]) / float(sum(FreeSpace)))
-			hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(float(FreeSpace[self.ServerList.index(s)]) / float(sum(FreeSpace)))) + hashLowerBound - 1
-			s.SetHashSpaceLowerBound(hashLowerBound)
-			s.SetHashSpaceUpperBound(hashUpperBound)
+			if s.RedundancyNo >= 0:
+				spacePercentage = float(float(FreeSpace[self.ServerList.index(s)]) / float(sum(FreeSpace)))
+				print "space usage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, s.HashSpaceLowerBound, s.HashSpaceUpperBound)
+			else:
+				print "unallocated node, free space: %d" % FreeSpace[self.ServerList.index(s)]
+		
+			# spacePercentage = float(float(FreeSpace[self.ServerList.index(s)]) / float(sum(FreeSpace)))
+			# hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(float(FreeSpace[self.ServerList.index(s)]) / float(sum(FreeSpace)))) + hashLowerBound - 1
+			# s.HashSpaceLowerBound = hashLowerBound
+			# s.HashSpaceUpperBound = hashUpperBound
 			
-			print "hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, hashLowerBound, hashUpperBound)
+			# print "hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, hashLowerBound, hashUpperBound)
 			
-			hashLowerBound = hashUpperBound + 1
+			# hashLowerBound = hashUpperBound + 1
 
 		return FreeSpace, ErrorServers
 
@@ -915,78 +1232,78 @@ class Cold:
 	#
 	# RETURNS:
 	#	Integer		number of copies available after copying/deleting
-	def UpdatePiece(self, piecename):
+	# def UpdatePiece(self, piecename):
 
-		piecename = piecename.strip()
-		availableservers = self.LookupPiece(piecename)
+		# piecename = piecename.strip()
+		# availableservers = self.LookupPiece(piecename)
 
-		# if it is unavailable, return:
-		if len(availableservers) == 0:
-			# here zero indicates zero available copies, not a boolean success
-			return 0
+		# # if it is unavailable, return:
+		# if len(availableservers) == 0:
+			# # here zero indicates zero available copies, not a boolean success
+			# return 0
 
-		# if we don't have enough available:
-		elif len(availableservers) < self.MinimumRedundancy:
+		# # if we don't have enough available:
+		# elif len(availableservers) < self.MinimumRedundancy:
 
-			# addcount is number we are short
-			addcount = (self.MinimumRedundancy - len(availableservers))
+			# # addcount is number we are short
+			# addcount = (self.MinimumRedundancy - len(availableservers))
 
-			if self.DebugOutput == True:
-				print "adding %d copies of piece %s" % (addcount, piecename)
+			# if self.DebugOutput == True:
+				# print "adding %d copies of piece %s" % (addcount, piecename)
 
-			# create server list containing all the servers that do not
-			# already have the piece
-			choiceservers = self.GetComplementServerList(availableservers)
+			# # create server list containing all the servers that do not
+			# # already have the piece
+			# choiceservers = self.GetComplementServerList(availableservers)
 
-			# select which servers to copy the piece to
-			selectedservers = self.GetNRedundancyServers(choiceservers, addcount)
+			# # select which servers to copy the piece to
+			# selectedservers = self.GetNRedundancyServers(choiceservers, addcount)
 
-			# Debug: dump server list results
-			if self.DebugOutput == True:
-				print "with %s: " % piecename
-				for a in availableservers:
-					print a.get_host()
-				print "without %s: " % piecename
-				for c in choiceservers:
-					print c.get_host()
-				print "selected for %s: " % piecename
-				for s in selectedservers:
-					print s.get_host()
+			# # Debug: dump server list results
+			# if self.DebugOutput == True:
+				# print "with %s: " % piecename
+				# for a in availableservers:
+					# print a.get_host()
+				# print "without %s: " % piecename
+				# for c in choiceservers:
+					# print c.get_host()
+				# print "selected for %s: " % piecename
+				# for s in selectedservers:
+					# print s.get_host()
 
-			# Get one copy of the file from a random server that has it to send to the other hosts
-			# Note: this will eventually be replaced with sending a command to a host with
-			#		the piece so that the piece is transferred within the cloud
-			sourceserver = self.GetNRedundancyServers(availableservers, 1)
-			sourceserver.ReceiveFile(sourceserver.get_path() + "/" + piecename, self.CachePath.strip() + "/" + piecename)
-
-
-			# Send file to hosts
-			for s in selectedservers:
-				s.SendFile(s.get_path() + "/" + piecename, self.CachePath.strip() + "/" + piecename)
-
-			# Return new total number of copies
-			return len(availableservers) + addcount
+			# # Get one copy of the file from a random server that has it to send to the other hosts
+			# # Note: this will eventually be replaced with sending a command to a host with
+			# #		the piece so that the piece is transferred within the cloud
+			# sourceserver = self.GetNRedundancyServers(availableservers, 1)
+			# sourceserver.ReceiveFile(sourceserver.get_path() + "/" + piecename, self.CachePath.strip() + "/" + piecename)
 
 
+			# # Send file to hosts
+			# for s in selectedservers:
+				# s.SendFile(s.get_path() + "/" + piecename, self.CachePath.strip() + "/" + piecename)
 
-		elif len(availableservers) > self.MaximumRedundancy:
+			# # Return new total number of copies
+			# return len(availableservers) + addcount
 
-			# remcount is number we are over maximum
-			remcount = (self.MaximumRedundancy - len(availableservers))
 
-			if self.DebugOutput == True:
-				print "removing %d copies of piece %s" % (remcount, piecename)
 
-			# select which servers to copy the piece to
-			selectedservers = self.GetNRedundancyServers(availableservers, addcount)
+		# elif len(availableservers) > self.MaximumRedundancy:
 
-			for s in selectedservers:
-				if self.DebugOutput == True:
-					print "removing from host: " + s.get_host()
-				s.RemoveFile(s.get_path() + "/" + piecename)
+			# # remcount is number we are over maximum
+			# remcount = (self.MaximumRedundancy - len(availableservers))
 
-			# Return new total number of copies
-			return len(availableservers) - remcount
+			# if self.DebugOutput == True:
+				# print "removing %d copies of piece %s" % (remcount, piecename)
+
+			# # select which servers to copy the piece to
+			# selectedservers = self.GetNRedundancyServers(availableservers, addcount)
+
+			# for s in selectedservers:
+				# if self.DebugOutput == True:
+					# print "removing from host: " + s.get_host()
+				# s.RemoveFile(s.get_path() + "/" + piecename)
+
+			# # Return new total number of copies
+			# return len(availableservers) - remcount
 
 
 	# PURPOSE:	given a map path, update each contained piece to meet
@@ -997,35 +1314,35 @@ class Cold:
 	# RETURNS:
 	#	(List, List)		( [list of strings] names of pieces that are unavailable
 	#						  [list of strings] names of files that are not completely available )
-	def UpdateMap(self, mappath):
+	# def UpdateMap(self, mappath):
 
-		# return variables
-		totaldownpieces = []
-		totaldownfiles = []
+		# # return variables
+		# totaldownpieces = []
+		# totaldownfiles = []
 
-#		# get pieces
-#		mappieces = self.ListMapPieces(mappath)
-#		uppieces, downpieces = self.PieceSplitByAvail(mappieces)
+# #		# get pieces
+# #		mappieces = self.ListMapPieces(mappath)
+# #		uppieces, downpieces = self.PieceSplitByAvail(mappieces)
 
-		# get files
-		mapfiles = self.ListMapFiles(mappath)
+		# # get files
+		# mapfiles = self.ListMapFiles(mappath)
 
-		for f in mapfiles:
-			uppieces, downpieces = self.FileSplitByAvail(mappath, f)
+		# for f in mapfiles:
+			# uppieces, downpieces = self.FileSplitByAvail(mappath, f)
 
-			if len(downpieces) > 0:
-				# add count to return var
-				totaldownpieces.extend(downpieces)
+			# if len(downpieces) > 0:
+				# # add count to return var
+				# totaldownpieces.extend(downpieces)
 
-				# add file to down list
-				totaldownfiles.append(f)
+				# # add file to down list
+				# totaldownfiles.append(f)
 
-			# update each available piece, even if file is not totally available
-			for p in uppieces:
-				self.UpdatePiece(p)
+			# # update each available piece, even if file is not totally available
+			# for p in uppieces:
+				# self.UpdatePiece(p)
 
-		# return tuple of list of strings
-		return (totaldownpieces, totaldownfiles)
+		# # return tuple of list of strings
+		# return (totaldownpieces, totaldownfiles)
 
 
 
@@ -1063,60 +1380,60 @@ class Cold:
 				
 		
 		
-		if self.RedundancyOrdering == "random":
-			for p in PieceList:
-				LocalServerList = []
+		# if self.RedundancyOrdering == "random":
+			# for p in PieceList:
+				# LocalServerList = []
 
-				for s in self.ServerList:
-					LocalServerList.append(s)
+				# for s in self.ServerList:
+					# LocalServerList.append(s)
 
-				# query all servers and count existing piece copies
-				ExistingCopies = self.LookupPiece(p, LocalServerList)
-	#			print "ExistingCopies [SFTC]: "
-	#			for c in ExistingCopies:
-	#				print c.get_host().strip()
-				ExistingCount = len(ExistingCopies)
+				# # query all servers and count existing piece copies
+				# ExistingCopies = self.LookupPiece(p, LocalServerList)
+	# #			print "ExistingCopies [SFTC]: "
+	# #			for c in ExistingCopies:
+	# #				print c.get_host().strip()
+				# ExistingCount = len(ExistingCopies)
 
-				# for each server that already has a copy:
-				#	remove that server from LocalServerList (so we don't try to send another copy to it)
-				for e in ExistingCopies:
-					for l in LocalServerList:
-						if l.get_host() != e.get_host() or l.get_user() != e.get_user() or l.get_path() != e.get_path():
-							continue
-						else:
-							LocalServerList.remove(e)
+				# # for each server that already has a copy:
+				# #	remove that server from LocalServerList (so we don't try to send another copy to it)
+				# for e in ExistingCopies:
+					# for l in LocalServerList:
+						# if l.get_host() != e.get_host() or l.get_user() != e.get_user() or l.get_path() != e.get_path():
+							# continue
+						# else:
+							# LocalServerList.remove(e)
 
-				# copy each piece to as many servers as specified as minimum redundancy minus the number that already exist
-	#			DestinationServers = GetNRedundancyServers(ServerList, RedundancyOrdering, MinimumRedundancy-ExistingCount)
+				# # copy each piece to as many servers as specified as minimum redundancy minus the number that already exist
+	# #			DestinationServers = GetNRedundancyServers(ServerList, RedundancyOrdering, MinimumRedundancy-ExistingCount)
 
-				# shuffle the server list
-				random.shuffle(LocalServerList)
+				# # shuffle the server list
+				# random.shuffle(LocalServerList)
 
-				# send the current piece to (MinimumRedundancy-ExistingCount) servers,
-				# but don't pick more servers than we have available
-				if (self.MinimumRedundancy - ExistingCount) > 0:
-					for i in range(min(self.MinimumRedundancy - ExistingCount, len(LocalServerList))):
-						# Verify free space requirement before actually sending
-						if LocalServerList[0].Df()/1024 < float(self.ServerFreeMinMB):
-							print "WARNING: insufficient space: %s, %f < %d" % (LocalServerList[0].get_host(), LocalServerList[0].Df()/1024, float(self.ServerFreeMinMB))
-						if self.DebugOutput == True:
-							print "sending %s to %s\n" % (p.strip(), LocalServerList[0].get_host().strip())
-					# top priority todo: replace this function with a repositoryserver call that handles df
-			#			SendFileToServer(LocalServerList[0].get_host(), LocalServerList[0].get_user(), LocalServerList[0].get_path() + "/" + p, self.CachePath.strip() + "/" + p)
-						LocalServerList[0].SendFile(LocalServerList[0].get_path() + "/" + p, self.CachePath.strip() + "/" + p)
+				# # send the current piece to (MinimumRedundancy-ExistingCount) servers,
+				# # but don't pick more servers than we have available
+				# if (self.MinimumRedundancy - ExistingCount) > 0:
+					# for i in range(min(self.MinimumRedundancy - ExistingCount, len(LocalServerList))):
+						# # Verify free space requirement before actually sending
+						# if LocalServerList[0].Df()/1024 < float(self.ServerFreeMinMB):
+							# print "WARNING: insufficient space: %s, %f < %d" % (LocalServerList[0].get_host(), LocalServerList[0].Df()/1024, float(self.ServerFreeMinMB))
+						# if self.DebugOutput == True:
+							# print "sending %s to %s\n" % (p.strip(), LocalServerList[0].get_host().strip())
+					# # top priority todo: replace this function with a repositoryserver call that handles df
+			# #			SendFileToServer(LocalServerList[0].get_host(), LocalServerList[0].get_user(), LocalServerList[0].get_path() + "/" + p, self.CachePath.strip() + "/" + p)
+						# LocalServerList[0].SendFile(LocalServerList[0].get_path() + "/" + p, self.CachePath.strip() + "/" + p)
 
-						# Iterate through the live server list and unset its DfCache, since we're changing the free space
-						i = 0
-						for s in self.ServerList:
-							if s == LocalServerList[0]:
-								if self.ServerList[i].DfCacheIsCurrent == True:
-									if self.DebugOutput == True:
-										print "Invalidating DfCache: " + self.ServerList[i].get_host()
-									self.ServerList[i].DfCacheIsCurrent = False
-								break
-							i += 1
+						# # Iterate through the live server list and unset its DfCache, since we're changing the free space
+						# i = 0
+						# for s in self.ServerList:
+							# if s == LocalServerList[0]:
+								# if self.ServerList[i].DfCacheIsCurrent == True:
+									# if self.DebugOutput == True:
+										# print "Invalidating DfCache: " + self.ServerList[i].get_host()
+									# self.ServerList[i].DfCacheIsCurrent = False
+								# break
+							# i += 1
 
-						LocalServerList.pop(0)
+						# LocalServerList.pop(0)
 
 
 	# PURPOSE:

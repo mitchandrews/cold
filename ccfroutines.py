@@ -11,11 +11,10 @@ import sys
 import os
 import subprocess
 import re
-# for time.sleep():
 import time
 import imp
 import string
-# for ipcalc.Network():
+# req for ipcalc.Network():
 ipcalc_mod = imp.load_source("ipcalc", "./ipcalc/ipcalc.py")
 
 ## Still probably need:
@@ -262,10 +261,11 @@ def ListSubnetIPs(subnet='10.0.1.0/24'):
 #	Boolean		whether or not IP is pingable
 def IsHostAlive(ip, maxtries=3):
 
-	ret = subprocess.call("ping -qo -t 2 -c 3 %s" % ip, shell=True, stdout=open('/dev/null', 'w'), stderr=subprocess.STDOUT)
+	ret = subprocess.call("ping -q -t 2 -c 3 %s" % ip, shell=True, stdout=open('/dev/null', 'w'), stderr=subprocess.STDOUT)
 	if ret == 0:
 		print "%s: is alive" % ip
 		return True
 	else:
 		print "%s: did not respond" % ip
 		return False
+

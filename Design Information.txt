@@ -1,16 +1,23 @@
 Ubuntu Server 12.10 VM: 76.85.202.52
 
 
-SSH: 
+SSH:
+
 	* Users: root (no ssh), mitch, luan, jason, cold1 ... cold6
 	* user passwords are cse437
 	* cold1 - cold6 passwords are the same as username
 
 	
 Terminology:
-  
-* server/host/node := all refer to the same thing: the passive computer that
-	hosts the storage and allows pubkey ssh login for some user
+
+* client 			:= the program that queries the daemon to make reads and
+						writes.  for now is defined as running on the same
+						machine asthe daemon.
+* daemon			:= the program that maintains connections to the servers
+						and services client requests						
+* server/host/node	:= all refer to the same thing: the passive computer that
+						hosts the storage and allows pubkey ssh login for some
+						user
 
 
 Startup Procedure:
@@ -25,5 +32,20 @@ Startup Procedure:
 * Ready to accept socket connections
 
 
-Trackerless Design Description:
-Every file piece has a hash, say SHA-1, which has a possible range of 160 bits (0x0000... - 0xffff..., hereafter called the hashspace).  Each piece falls randomly within the hashspace, by definition.  Each storage node is assigned a fixed range of the hashspace, which only changes when new nodes are added.  The percentage of the total hashspace assigned to a node is equal to the percentage of the total storage space the node provides.  This means the range of pieces found on each node is stored for each node and not the explicit list of pieces stored, which means only a very small quantity of metadata is required, which would be independent of storage capacity and utilization.  This also means that every time data is written, the pieces will be distributed to the hosts in a random fashion, and thus at least partially load balanced.  When a new storage node is added it would be injected into the lineup, and the bounds of every node would change.  The ones near in the hashspace lineup would change a lot while the ones furthest would change only a little, but the bandwidth in this situation works out pretty well.  The new, empty node would start by being filled with a predictable amount of data (filling the server to the same percentage usage as the new total storage usage) from (at least, depending on redundancy) two different sources.  Of note is that a periodic background process might be useful to check on availability and manage background tasks, but I don't think it's necessarily required.
+repopulate_layout(new_servers[], grow_only=true) Procedure:
+
+* 
+
+
+Trackerless Design Overview:
+
+Every file piece has a hash, say SHA-1, which has a possible range of 160 bits (0x0000... - 0xffff..., hereafter called the hashspace).  Each piece falls randomly within the hashspace, by definition.  Each storage node is assigned a fixed range of the hashspace, which only changes when nodes are added or removed.  The percentage of the total hashspace assigned to a node is equal to the percentage of the total storage space the node provides.  This means the range of pieces found on each node is stored for each node and not the explicit list of pieces stored, which means only a very small quantity of metadata is required, which would be independent of storage capacity and utilization.  This also means that every time data is written, the pieces will be distributed to the hosts in a random fashion, and thus at least partially load balanced.  When a new storage node is added it would be injected into the lineup, and the bounds of every node would change.  The ones near in the hashspace lineup would change a lot while the ones furthest would change only a little, but the bandwidth in this situation works out pretty well.  The new, empty node would start by being filled with a predictable amount of data (filling the server to the same percentage usage as the new total storage usage) from (at least, depending on redundancy) two different sources.
+
+
+File Storage Overview:
+
+<explain how file paths are mapped & db design>
+
+
+File Read & Write Request Process Overview:
+

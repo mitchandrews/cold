@@ -26,9 +26,9 @@ CClient = Cold()
 # Getopt complete argument list
 optlist, args = getopt.gnu_getopt(sys.argv[1:], 'a:c:df:hlo:pr:s:vw:',
 				['pretend', 'verbose', 'debug', 'help', 'warranty',
-				 'create-map', 'create-atlas', 'list-files', 'list-maps', 'print-usage', 'show-usage',
+				 'consolidate-layout', 'create-map', 'list-files', 'list-maps', 'print-usage', 'show-usage',
 
-				 'find-file=', 'list-map-files=', 'map-regex=', 'options-file=',
+				 'add-server=', 'find-file=', 'list-map-files=', 'map-regex=', 'options-file=',
 				 'outpath=' 'receive=', 'scan-subnet=', 'send-file=', 'send-to-cloud=', 'update-piece='])
 
 for i in optlist:
@@ -114,43 +114,43 @@ for i in optlist:
 CClient.LoadOptions()
 
 if CClient.VerboseOutput == True:
+	pass
 #	print "Module working dir:", ModuleWDir
 #	print "Module absolute path:", ModulePathAbs
-	print "Cache path:", CClient.CachePath
 	
-# list of Integers (KBs)
-FreeSpace = []
+# # list of Integers (KBs)
+# FreeSpace = []
 
-# iterate through servers, append `df` results of each
-for s in CClient.ServerList:
-	# todo code not optimized
-	if CClient.DebugOutput == True:
-		print "Calling Df(): " + s.get_host()
+# # iterate through servers, append `df` results of each
+# for s in CClient.ServerList:
+	# # todo code not optimized
+	# if CClient.DebugOutput == True:
+		# print "Calling Df(): " + s.get_host()
 
-	usage = s.Df()
-	if usage > 0:
-		if CClient.DebugOutput == True:
-			print "appending (FreeSpace): " + str(usage)
-		FreeSpace.append(usage)
-	else:
-		if CClient.DebugOutput == True:
-			print "appending (ErrorServers): " + s.get_host()
-		ErrorServers.append(s.get_host())
+	# usage = s.Df()
+	# if usage > 0:
+		# if CClient.DebugOutput == True:
+			# print "appending (FreeSpace): " + str(usage)
+		# FreeSpace.append(usage)
+	# else:
+		# if CClient.DebugOutput == True:
+			# print "appending (ErrorServers): " + s.get_host()
+		# ErrorServers.append(s.get_host())
 
-if CClient.VerboseOutput == True:
-	#print hashspace information
-	hashLowerBound = 0
-	for s in CClient.ServerList:
-		spacePercentage = float(float(FreeSpace[CClient.ServerList.index(s)]) / float(sum(FreeSpace)))
-		hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(float(FreeSpace[CClient.ServerList.index(s)]) / float(sum(FreeSpace)))) + hashLowerBound - 1
-		if hashUpperBound >= 0x10000000000000000000000000000000000000000:
-			hashUpperBound = 0xffffffffffffffffffffffffffffffffffffffff
-		s.SetHashSpaceLowerBound(hashLowerBound)
-		s.SetHashSpaceUpperBound(hashUpperBound)
+# if CClient.VerboseOutput == True:
+	# #print hashspace information
+	# hashLowerBound = 0
+	# for s in CClient.ServerList:
+		# spacePercentage = float(float(FreeSpace[CClient.ServerList.index(s)]) / float(sum(FreeSpace)))
+		# hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(float(FreeSpace[CClient.ServerList.index(s)]) / float(sum(FreeSpace)))) + hashLowerBound - 1
+		# if hashUpperBound > 0xffffffffffffffffffffffffffffffffffffffff:
+			# hashUpperBound = 0xffffffffffffffffffffffffffffffffffffffff
+		# s.HashSpaceLowerBound = hashLowerBound
+		# s.HashSpaceUpperBound = hashUpperBound
 		
-		print "hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, hashLowerBound, hashUpperBound)
+		# print "hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, hashLowerBound, hashUpperBound)
 		
-		hashLowerBound = hashUpperBound + 1
+		# hashLowerBound = hashUpperBound + 1
 
 # Re-scan the args list for action options
 
@@ -161,9 +161,27 @@ for i in optlist:
 #		ListServerContents(ServerList)
 		if CClient.DebugOutput == True:
 			print "flag: -l"
+			
+	# --add-server: Add unassigned server to list
+	elif flag == "--add-server":
+		if CClient.DebugOutput == True:
+			pass
+			#print "flag: --add-server %s" % val
+		if len(val) != 0:
+			ret = CClient.AddServer(val)
+		else:
+			print "ERROR: --add-server <user@host:path>"
+			sys.exit()
+			
+	# --consolidate-layout: Reevaluate servers and redistribute pieces
+	elif flag == "--consolidate-layout":
+		if CClient.DebugOutput == True:
+			print "flag: --consolidate-layout"
+		CClient.ConsolidateLayout(False)
+		sys.exit()
 
 	# -c, --create-map: Create Map
-	elif flag == "-c" or flag == "--create-map" or flag == "--create-atlas":
+	elif flag == "-c" or flag == "--create-map":
 		if CClient.DebugOutput == True:
 			print "flag: -c %s" % val
 		if len(val) != 0:
@@ -208,6 +226,7 @@ for i in optlist:
 				alive = IsHostAlive(r)
 				if alive == True:
 					print "host " + r + ": up"
+					#TODO: CClient.AddServer()...
 				else:
 					print "host " + r + ": down"
 		else:
@@ -239,29 +258,29 @@ for i in optlist:
 
 	# --update-piece: duplicate piece copies or delete copies across servers
 	#					to meet redundancy specifications
-	elif flag == "--update-piece":
-		if CClient.DebugOutput == True:
-			print "flag: --update-piece %s" % val
-		if len(val) != 0:
-			ret = CClient.UpdatePiece(val)
-		else:
-			print "ERROR: --update-piece <piecename>, len(piecename) == 0"
+	# elif flag == "--update-piece":
+		# if CClient.DebugOutput == True:
+			# print "flag: --update-piece %s" % val
+		# if len(val) != 0:
+			# ret = CClient.UpdatePiece(val)
+		# else:
+			# print "ERROR: --update-piece <piecename>, len(piecename) == 0"
 
-	# --update-map: duplicate piece copies or delete copies across servers
-	#					to meet redundancy specifications
-	elif flag == "--update-map":
-		if CClient.DebugOutput == True:
-			print "flag: --update-map %s" % val
-		if len(val) != 0:
-			downpieces, downfiles = CClient.UpdateMap(val)
-			print "down pieces:",
-			for p in downpieces:
-				print p + '\n'
-			print "down files:",
-			for f in downfiles:
-				print f + '\n'
-		else:
-			print "ERROR: --update-map <mappath>, len(mappath) == 0"
+	# # --update-map: duplicate piece copies or delete copies across servers
+	# #					to meet redundancy specifications
+	# elif flag == "--update-map":
+		# if CClient.DebugOutput == True:
+			# print "flag: --update-map %s" % val
+		# if len(val) != 0:
+			# downpieces, downfiles = CClient.UpdateMap(val)
+			# print "down pieces:",
+			# for p in downpieces:
+				# print p + '\n'
+			# print "down files:",
+			# for f in downfiles:
+				# print f + '\n'
+		# else:
+			# print "ERROR: --update-map <mappath>, len(mappath) == 0"
 
 
 

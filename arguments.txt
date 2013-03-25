@@ -24,6 +24,15 @@ Cold Program Arguments:
 			searching only maps whose names match --map-regex's argument
 		NOTE: variant should also be included for specific maps:
 			--find-file [filename_regex] <map> <...>
+			
+--add-server <user@host:path>
+		Add a server to the unassigned list.  Must call consolidate()
+		manually to include in lineup and activate
+		
+--consolidate-layout
+		Update server availability and free space, re-calculate data bounds,
+		and redistribute pieces between servers as needed. (Server is offline
+		while busy, not implemented.)
 
 -c, --create-map, create-atlas <file>
 		implied by -s
