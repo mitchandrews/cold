@@ -11,6 +11,7 @@ then
 	hi="0000000000000000000000000000000000000000"
 fi
 
+rm -f "/tmp/.cold.`whoami`.outbounds.txt"
 touch "/tmp/.cold.`whoami`.outbounds.txt"
 
 while read line

@@ -29,7 +29,7 @@ optlist, args = getopt.gnu_getopt(sys.argv[1:], 'a:c:df:hlo:pr:s:vw:',
 				 'consolidate-layout', 'create-map', 'list-files', 'list-maps', 'print-usage', 'show-usage',
 
 				 'add-server=', 'find-file=', 'list-map-files=', 'map-regex=', 'options-file=',
-				 'outpath=' 'receive=', 'scan-subnet=', 'send-file=', 'send-to-cloud=', 'update-piece='])
+				 'outpath=' 'receive=', 'scan-subnet=', 'send-file=', 'send-to-cloud=', 'set-redundancy=', 'update-piece='])
 
 for i in optlist:
 	flag, val = i
@@ -240,6 +240,15 @@ for i in optlist:
 			ret = CClient.SendToCloud(val)
 		else:
 			print "ERROR: -s <path>, len(path) == 0"
+			
+	# --set-redundancy: Send File To Cloud
+	elif flag == "--set-redundancy":
+		if CClient.DebugOutput == True:
+			print "flag: --set-redundancy %s" % val
+		if len(val) != 0 and int(val) > 0:
+			CClient.ChangeRedundancy(int(val))
+		else:
+			print "ERROR: --set-redundancy <val>, val < 1"
 
 	# --show-usage
 	elif flag == "--show-usage" or flag == "--print-usage":

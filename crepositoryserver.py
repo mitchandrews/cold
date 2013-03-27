@@ -30,7 +30,7 @@ class RepositoryServer:
 	# Integer ServerFreeMB (default = 2048)
 	# String HashSpaceLowerBound
 	# String HashSpaceUpperBound
-	# Integer RedundancyNo
+	# Integer Band
 	# 
 
 	def __init__(self):
@@ -38,7 +38,7 @@ class RepositoryServer:
 		self.DfCacheIsCurrent = False
 		self.HashSpaceLowerBound = -1
 		self.HashSpaceUpperBound = -1
-		self.RedundancyNo = -1
+		self.Band = -1
 
 	def __eq__(self, s):
 		if self.host == s.get_host() and self.user == s.get_user() and self.path == s.get_path():
@@ -59,7 +59,7 @@ class RepositoryServer:
 		return self.path.strip()
 
 	def print_info(self):
-		print "=== %s@%s:%s ===\n(( %d 0x%x:0x%x ))" % (self.user, self.host, self.path, self.RedundancyNo, self.HashSpaceLowerBound, self.HashSpaceUpperBound)
+		print "=== %s@%s:%s ===\n(( %d 0x%x:0x%x ))" % (self.user, self.host, self.path, self.Band, self.HashSpaceLowerBound, self.HashSpaceUpperBound)
 
 
 

@@ -14,6 +14,8 @@ OLD_PID=`cat "$PID_FILE" 2>/dev/null`
 OLDCHILD_PID=`cat "$CHILDPID_FILE" 2>/dev/null`
 CMD="w"
 
+touch "$CMD_FILE"
+
 if [[ "$1" != "" ]]
 then
 	CMD="$@"

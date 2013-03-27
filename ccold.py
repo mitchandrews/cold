@@ -287,16 +287,16 @@ class Cold:
 
 				# continue
 				
-			# Redundancy
-			r = re.match(r'^[ \t]*redundancy[ \t]*=[ \t]*(.*)$', j)
-			if r is not None:
-				if r.group(1).lower() != "":
-					# todo integrity checks here
-					self.Redundancy = int(r.group(1))
-					if self.DebugOutput == True:
-						print "setting redundancy: " + str(self.Redundancy)
+			# # Redundancy
+			# r = re.match(r'^[ \t]*redundancy[ \t]*=[ \t]*(.*)$', j)
+			# if r is not None:
+				# if r.group(1).lower() != "":
+					# #todo integrity checks here
+					# self.Redundancy = int(r.group(1))
+					# if self.DebugOutput == True:
+						# print "setting redundancy: " + str(self.Redundancy)
 
-				continue
+				# continue
 
 			# Redundancy Ordering
 			r = re.match(r'^[ \t]*redundancy[-]?ordering[ \t]*=[ \t]*(.*)$', j)
@@ -370,7 +370,9 @@ class Cold:
 				rs.set_path(r[2])
 				
 				if len(r[3]) > 0:
-					rs.RedundancyNo = int(r[3])
+					rs.Band = int(r[3])
+					if (rs.Band + 1) > self.Redundancy:
+						self.Redundancy = (rs.Band + 1)
 					
 				if len(r[4]) > 0:
 					rs.HashSpaceLowerBound = int(r[4], 16)
@@ -442,72 +444,76 @@ class Cold:
 			return 1
 			
 		self.ServerList.append(rs)
-		if self.DebugOutput == True:
-			rs.print_info()
-			
-		# Write information to layout.txt
-		with open("layout.txt", "a") as f:
-			f.write("%s@%s:%s:-1:-1:-1\n" % (rs.get_user(), rs.get_host(), rs.get_path()))
+		
+		self.ConsolidateLayout(True)
 
 		return 0
 		
 	
+	
+	# PURPOSE: Change the band count and consolidate servers
+	def ChangeRedundancy(self, newBandCount):
+		
+		newBandCount = int(newBandCount)
+		if newBandCount == self.Redundancy:
+			print "WARNING: Redundancy not changed (same); skipping!"
+			return 1
+		if newBandCount < 1:
+			return 2
+			
+		print "Attention! Changing redundancy requires consolidation, so please make sure all servers are available."
+		self.PrevRedundancy = self.Redundancy
+		self.Redundancy = newBandCount
+		self.ConsolidateLayout(False)
+		
+
+		
+	# PURPOSE: Re-organize servers to increase space efficiency, change
+	#			 server bounds, and move pieces between servers to match
 	def ConsolidateLayout(self, growOnly=True):
 		
 		if growOnly == False:
 		
-			# If can't connect, set hash info to -1 and ignore
+			# If can't connect, set hash info to -3 and ignore
 			upServers = []
 			for s in self.ServerList:
 				if not IsHostAlive(s.get_host()):
 					print "ConsolidateLayout(): host down: %s" % (s.get_host())
-					s.RedundancyNo = -1
-					s.HashSpaceLowerBound = -1
-					s.HashSpaceUpperBound = -1
+					s.Band = -3
+					s.HashSpaceLowerBound = -3
+					s.HashSpaceUpperBound = -3
 				else:
 					upServers.append(s)
 					
-			# If doesn't have minimum free space, set hash info to -1 and ignore
-			availServers = []
+			# Check up servers for minimum free space, otherwise set hash info
+			#	to -2 and ignore
+			#availServers = []
+			availServers = list(upServers)
 			for s in upServers:
 				if (s.Df()/1024) < self.ServerFreeMinMB:
 					print "ConsolidateLayout(): host full: %s" % (s.get_host())
-					s.RedundancyNo = -1
-					s.HashSpaceLowerBound = -1
-					s.HashSpaceUpperBound = -1
-				else:
-					availServers.append(s)
-			
-			# iterate through servers, checking for any that are out of range for
-			# the configured number of bands.  This happens when the user changes
-			# the number of bands before calling --consolidate-layout.
-			for s in self.ServerList:
-				if s.RedundancyNo >= self.Redundancy:
-					print "freeing server %s from band %d" % (s.get_host(), s.RedundancyNo)
-					s.RedundancyNo = -1
-					s.HashSpaceLowerBound = -1
-					s.HashSpaceUpperBound = -1
-					availServers.append(s)
-					# TODO: remove all pieces from freed server, update DfCache
-					
+					s.Band = -2
+					s.HashSpaceLowerBound = -2
+					s.HashSpaceUpperBound = -2
+					availServers.remove(s)
 				
 			# save all previous layout information
 			for s in self.ServerList:
-				s.PrevRedundancyNo = s.RedundancyNo
+				s.PrevRedundancyNo = s.Band
 				s.PrevHashSpaceLowerBound = s.HashSpaceLowerBound
 				s.PrevHashSpaceUpperBound = s.HashSpaceUpperBound
 			
 			
-			# Create list of total free space for each RedundancyNo
-			freeSpace = []
-			curRedundancyNo = 0
-			while curRedundancyNo < self.Redundancy:
-				total = 0
-				for s in availServers:
-					if s.RedundancyNo == curRedundancyNo:
-						total = total + s.DfCache
-				freeSpace.append(total)
-				curRedundancyNo = curRedundancyNo + 1
+			# # Create list of total free space for each Band
+			# freeSpace = []
+			# curRedundancyNo = 0
+			# while curRedundancyNo < self.Redundancy:
+				# total = 0
+				# for s in availServers:
+					# if s.Band == curRedundancyNo:
+						# total = total + s.DfCache
+				# freeSpace.append(total)
+				# curRedundancyNo = curRedundancyNo + 1
 
 			
 			# Order available servers by free space, desc
@@ -527,7 +533,6 @@ class Cold:
 				print "appending largest index: %d (%d)" % (largest_freespace_i, largest_freespace_size)
 				orderedAvailServers.append(largest_freespace_i)
 				i = i + 1
-
 			
 			# debug output available servers ordered by free space, desc:
 			if self.DebugOutput == True:
@@ -536,7 +541,6 @@ class Cold:
 					print "%s %d" % (availServers[s].get_host(), availServers[s].DfCache)
 					#print "%s [%d] (%d), " % (availServers[s].get_host(), availServers.index(s), availServers[s].DfCache),
 				print ""
-			
 				
 			# create empty lists for new layout
 			newLayoutLists = []
@@ -559,9 +563,9 @@ class Cold:
 						smallest_band_size = bandSizeSum
 					
 				# append index to the smallest layout band
-				newLayoutLists[smallest_band_i].append(s)
 				print "adding %s to band %d, new size: %d" % (availServers[s].get_host(), smallest_band_i, smallest_band_size + availServers[s].DfCache)
-				availServers[s].RedundancyNo = smallest_band_i
+				newLayoutLists[smallest_band_i].append(s)
+				availServers[s].Band = smallest_band_i
 				
 			# debug print indices of new layout
 			if self.DebugOutput == True:
@@ -573,16 +577,16 @@ class Cold:
 					print ""
 					
 			# TODO: touch file indicating consolidation started
-			# (for startup sanity checking, not implemented)
+			# (for startup sanity checking and mutual exclusion; not implemented)
 			# and take server offline
 			
 
 			# debug
 			for s in self.ServerList:
-				print "%s band: %d" % (s.get_host(), s.RedundancyNo)
+				print "%s band: %d" % (s.get_host(), s.Band)
 					
 			# recalculate bounds
-			self.RecalculateBounds()
+			self.RecalculateBounds(newLayoutLists)
 			
 			# debug print new bounds
 			print "New Bounds & All Pieces:"
@@ -590,96 +594,166 @@ class Cold:
 				s.print_info()
 				#s.ListPiecesByRange("4444444444444444444444444444444444444444", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 			
-			## MOVE PIECES ##
+
+		# if we are merely appending new servers to existing layout
+		else:
+			newServer = ""
+			for s in self.ServerList:
+				if s.Band == -1:
+					print "Appending new server: %s" % s.get_host()
+					newServer = s
+					break
 			
+			# If can't connect, set hash info to -3 and ignore
+			if not IsHostAlive(newServer.get_host()):
+				print "ConsolidateLayout(): host down: %s" % (newServer.get_host())
+				newServer.Band = -3
+				newServer.HashSpaceLowerBound = -3
+				newServer.HashSpaceUpperBound = -3
+				return 1
 			
-			
-			## create list of local pieces to move to each other server in same band
-			
-			for s in orderedAvailServers:
-				availServers[s].MoveTo = []
+			# Check up servers for minimum free space, otherwise set hash info
+			#	to -2 and ignore
+			if (newServer.Df()/1024) < self.ServerFreeMinMB:
+				print "ConsolidateLayout(): host full: %s" % (newServer.get_host())
+				newServer.Band = -2
+				newServer.HashSpaceLowerBound = -2
+				newServer.HashSpaceUpperBound = -2
+				return 2
 				
-				availServers[s].SendFile("/tmp/", "filter-sha1-inbounds.sh")
-				availServers[s].SendFile("/tmp/", "filter-sha1-outbounds.sh")
+			# save all previous layout information
+			for s in self.ServerList:
+				s.PrevRedundancyNo = s.Band
+				s.PrevHashSpaceLowerBound = s.HashSpaceLowerBound
+				s.PrevHashSpaceUpperBound = s.HashSpaceUpperBound
+			
+			# find smallest band
+			bandSizes = []
+			i=0
+			while i < self.Redundancy:
+				bandSizes.append(0)
+				i = i + 1
+			for s in self.ServerList:
+				if s.Band >= 0:
+					bandSizes[s.Band] = bandSizes[s.Band] + s.DfCache
+					print "appending size %d (%s) to band %d" % (s.DfCache, s.get_host(), s.Band)
 				
-				# find pieces not matching range s.PrevHashSpaceLowerBound, s.PrevHashSpaceUpperBound
-				pieceListToMove = availServers[s].ListPiecesByRange("%x" % availServers[s].PrevHashSpaceLowerBound, "%x" % availServers[s].PrevHashSpaceUpperBound, False)
+			smallest_band_i = 0
+			smallest_band_size = 9999999999999999999
+			for b in bandSizes:
+				if b < smallest_band_size:
+					smallest_band_size = b
+					smallest_band_i = bandSizes.index(b)
 				
-				#availServers[s].RemoveFile("/tmp/filter-sha1-inbounds.sh")
-				#availServers[s].RemoveFile("/tmp/filter-sha1-outbounds.sh")
+			# # debug output band sizes
+			# for b in bandSizes:
+				# print "band %d size: %d" % (bandSizes.index(b), b)
+			# print "smallest band: %d" % smallest_band_i
 			
-				continue #debug
-				
-				
-				#for each other server:
-				for o in orderedAvailServers:
-					if availServers[o] == availServers[s]:
-						continue
-					availServers[s].MoveTo.append([])
-					#if server is in same band as s:
-					if availServers[o].RedundancyNo == availServers[s].RedundancyNo:
-						# grep local pieces that should be moved there,
-						pieceListThisServer = availServers[s].ListPiecesByRange(availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
-				 		#and append results to MoveTo list
-						for p in pieceListThisServer:
-							availServers[s].MoveTo[orderedAvailServers.index(availServers[o])].append(int(p))
-							print "moving piece %x to %s (%x, %x)" % (int(p), availServers[o].get_host(), availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
+			# append newServer to smallest band
+			newServer.Band = smallest_band_i
 			
+			# recalculate bounds
+			self.RecalculateBounds()
 			
-			## create list of local pieces to move to each new band
-			# prevBandCount = max(self.ServerList[].RedundancyNo)
-			# newBandCount = self.Redundancy - prevBandCount
-			# if newBandCount > 0:
-			#	for s in orderedAvailServers:
-			#		sizeToSend = float((s.HashSpaceUpperBound - s.HashSpaceLowerBound) / (prevBandCount+1))
-			#		for p in range(0, prevBandCount):
-			#			if p == 0:	# make sure the endpoints match up exactly with existing bounds
-			#				lowerBoundToSend = s.HashSpaceLowerBound
-			#				upperBoundToSend = lowerBoundToSend + sizeToSend
-			#			elif p == (prevBandCount-1):
-			#				lowerBoundToSend = s.HashSpaceUpperBound - sizeToSend
-			#				upperBoundToSend = s.HashSpaceUpperBound
-			#			else:
-			#				lowerBoundToSend = s.HashSpaceLowerBound + (sizeToSend * orderedAvailServers.index(s))
-			#				upperBoundToSend = lowerBoundToSend + sizeToSend
-			#		
+		## MOVE PIECES ##
 			
-			# write new layout to file
-			
-			# remove lock file
-			
-			
-			
-			
-			
-	def RecalculateBounds(self):
+		## create list of local pieces to move to each other server in same band
 		
-		curBand = 0
-		while curBand < self.Redundancy:
+		# for s in orderedAvailServers:
+			# availServers[s].MoveTo = []
+			
+			# availServers[s].SendFile("/tmp/", "filter-sha1-inbounds.sh")
+			# availServers[s].SendFile("/tmp/", "filter-sha1-outbounds.sh")
+			
+			# # find pieces not matching range s.PrevHashSpaceLowerBound, s.PrevHashSpaceUpperBound
+			# pieceListToMove = availServers[s].ListPiecesByRange("%x" % availServers[s].PrevHashSpaceLowerBound, "%x" % availServers[s].PrevHashSpaceUpperBound, False)
+			
+			# #availServers[s].RemoveFile("/tmp/filter-sha1-inbounds.sh")
+			# #availServers[s].RemoveFile("/tmp/filter-sha1-outbounds.sh")
+		
+			# continue #debug
+			
+			
+			# #for each other server:
+			# for o in orderedAvailServers:
+				# if availServers[o] == availServers[s]:
+					# continue
+				# availServers[s].MoveTo.append([])
+				# #if server is in same band as s:
+				# if availServers[o].Band == availServers[s].Band:
+					# # grep local pieces that should be moved there,
+					# pieceListThisServer = availServers[s].ListPiecesByRange(availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
+					# #and append results to MoveTo list
+					# for p in pieceListThisServer:
+						# availServers[s].MoveTo[orderedAvailServers.index(availServers[o])].append(int(p))
+						# print "moving piece %x to %s (%x, %x)" % (int(p), availServers[o].get_host(), availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
+		
+		
+		## create list of local pieces to move to each new band
+		# prevBandCount = max(self.ServerList[].Band)
+		# newBandCount = self.Redundancy - prevBandCount
+		# if newBandCount > 0:
+		#	for s in orderedAvailServers:
+		#		sizeToSend = float((s.HashSpaceUpperBound - s.HashSpaceLowerBound) / (prevBandCount+1))
+		#		for p in range(0, prevBandCount):
+		#			if p == 0:	# make sure the endpoints match up exactly with existing bounds
+		#				lowerBoundToSend = s.HashSpaceLowerBound
+		#				upperBoundToSend = lowerBoundToSend + sizeToSend
+		#			elif p == (prevBandCount-1):
+		#				lowerBoundToSend = s.HashSpaceUpperBound - sizeToSend
+		#				upperBoundToSend = s.HashSpaceUpperBound
+		#			else:
+		#				lowerBoundToSend = s.HashSpaceLowerBound + (sizeToSend * orderedAvailServers.index(s))
+		#				upperBoundToSend = lowerBoundToSend + sizeToSend
+		#		
+			
+		## write new layout to file
+			
+		## remove lock file
+			
+	# PURPOSE: after consolidation, recalculate the bounds for all servers
+	#
+	# * default empty lists implies using existing layout
+	def RecalculateBounds(self, newLayoutLists=[]):
+		
+		# if no new layout provided then use existing
+		if len(newLayoutLists) == 0:
+			for i in range(0, self.Redundancy):
+				newLayoutLists.append([])
+			for s in self.ServerList:
+				newLayoutLists[s.Band].append(self.ServerList.index(s))
+				
+			# # debug print layout list
+			# for l in newLayoutLists:
+				# for s in l:
+					# print "band %d: %s" % (newLayoutLists.index(l), s)
+		
+		for b in newLayoutLists:
 			
 			# sum available space in this band
+			curBand = newLayoutLists.index(b)
 			totalSize = 0
 			for s in self.ServerList:
-				if s.RedundancyNo == curBand:
+				if s.Band == curBand:
 					totalSize = totalSize + s.DfCache
 					
 			print "band %d total size: %d" % (curBand, totalSize)
 					
 			# update each server in band with new bounds
 			hashLowerBound = 0
-			for s in self.ServerList:
-				if s.RedundancyNo == curBand:
-					spacePercentage = (float(s.DfCache) / float(totalSize))
-					hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(s.DfCache) / float(totalSize)) + hashLowerBound - 1
+			for s in b:
+				if self.ServerList[s].Band == curBand:
+					spacePercentage = (float(self.ServerList[s].DfCache) / float(totalSize))
+					hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(self.ServerList[s].DfCache) / float(totalSize)) + hashLowerBound - 1
 					if hashUpperBound > 0xfffffffffffff000000000000000000000000000:
 						hashUpperBound = 0xffffffffffffffffffffffffffffffffffffffff
-					s.HashSpaceLowerBound = hashLowerBound
-					s.HashSpaceUpperBound = hashUpperBound
+					self.ServerList[s].HashSpaceLowerBound = hashLowerBound
+					self.ServerList[s].HashSpaceUpperBound = hashUpperBound
 				
-					print "%s hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (s.get_host(), spacePercentage, hashLowerBound, hashUpperBound)
+					print "%s hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (self.ServerList[s].get_host(), spacePercentage, hashLowerBound, hashUpperBound)
 			
 					hashLowerBound = hashUpperBound + 1
-			curBand = curBand + 1
 
 			
 			
@@ -771,7 +845,7 @@ class Cold:
 		# print hashspace information
 		hashLowerBound = 0
 		for s in self.ServerList:
-			if s.RedundancyNo >= 0:
+			if s.Band >= 0:
 				spacePercentage = float(float(FreeSpace[self.ServerList.index(s)]) / float(sum(FreeSpace)))
 				print "space usage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, s.HashSpaceLowerBound, s.HashSpaceUpperBound)
 			else:

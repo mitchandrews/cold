@@ -26,8 +26,8 @@ Cold Program Arguments:
 			--find-file [filename_regex] <map> <...>
 			
 --add-server <user@host:path>
-		Add a server to the unassigned list.  Must call consolidate()
-		manually to include in lineup and activate
+		Add a server to the smallest existing band. Implies --consolidate-layout
+		Only the changed band is modified
 		
 --consolidate-layout
 		Update server availability and free space, re-calculate data bounds,
@@ -55,6 +55,10 @@ Cold Program Arguments:
 			1) create map
 			2) send to <minimum redundancy> number of servers
 				via specified ordering
+				
+--set-redundancy <int>
+		change the number of redundant copies stored for all data.  implies
+		--consolidate-layout
 
 -r, --receive: Cloud.ReceiveFromCloud()
 		requires a supplied output path
