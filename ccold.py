@@ -466,7 +466,43 @@ class Cold:
 		self.Redundancy = newBandCount
 		self.ConsolidateLayout(False)
 		
-
+		
+	# PURPOSE: Move pieces from old layout to new layout within a single band.
+	#			Primarily called by ConsolidateLayout()
+	#
+	#	* given: len(newLayoutLists) > bandNo
+	def RepopulateSingleBand(self, newLayoutLists, bandNo=0):
+		
+		# for each server in old layout in band 'bandNo'
+		for s in self.ServerList:
+			if s.Band == bandNo:
+			
+				# get list of servers in new layout that overlap bounds
+				# so we can push pieces
+				for d in newLayoutLists[bandNo]:
+				
+					# don't push to self
+					if self.ServerList[d] == s:
+						continue
+						
+					# push all pieces from s within d's bounds to d
+					s.SendPiecesByTargetRange(self.ServerList[d])
+					s.DeletePiecesByRange(self.ServerList[d].HashSpaceLowerBound, self.ServerList[d].HashSpaceUpperBound)
+					
+	
+	def RepopulateBetweenBands(self, newLayoutLists, srcBandNo=0, dstBandNo=1):
+		
+		# for each server in old layout in band 'bandNo'
+		for s in newLayoutLists[srcBandNo]:
+			
+			# get list of servers in new layout that overlap bounds
+			# so we can push pieces
+			for d in newLayoutLists[dstBandNo]:
+					
+				# push all pieces from s within d's bounds to d
+				self.ServerList[s].SendPiecesByTargetRange(self.ServerList[d])
+		
+		
 		
 	# PURPOSE: Re-organize servers to increase space efficiency, change
 	#			 server bounds, and move pieces between servers to match
@@ -594,7 +630,50 @@ class Cold:
 				s.print_info()
 				#s.ListPiecesByRange("4444444444444444444444444444444444444444", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 			
-
+			
+			## MOVE PIECES ##
+		
+			# if number of bands doesn't change, just RepopulateSingleBand() each band
+			if self.Redundancy == self.PrevRedundancy:
+				if self.DebugOutput == True:
+					print "band count unchanged"
+					
+				for i in range(0, len(newLayoutLists)):
+					print "calling RepopulateSingleBand(%d)" % i
+					self.RepopulateSingleBand(newLayoutLists, i)
+					
+			## NOTE: this is severely unoptimized, currently requiring n/2 band copies.
+			##			a little effort would easily reduce this to n*log(n), and even
+			##			better is probably doable
+			
+			# if number of bands changed:
+			else:
+				
+				# clear all bands > 0
+				for s in self.ServerList:
+					if s.Band > 0:
+						s.DeletePiecesByRange()	#defaults to entire range
+				# do first duplication:
+				
+				if self.Redundancy > 1:
+					# duplicate to band 1
+					print "calling RepopulateBetweenBands(0, 1)"
+					self.RepopulateBetweenBands(newLayoutLists, 0, 1)
+					
+				# if Redundancy > 2, then there are still bands to fill.
+				# have band 0 duplicate to evens, band 1 to odds.
+				if self.Redundancy > 2:
+					for i in range(2, self.Redundancy):
+						if i % 2 == 0:
+							print "RepopulateBetweenBands(newLayoutLists, 0, %d)" % i
+							self.RepopulateBetweenBands(newLayoutLists, 0, i)
+						else:
+							print "RepopulateBetweenBands(newLayoutLists, 1, %d)" % i
+							self.RepopulateBetweenBands(newLayoutLists, 1, i)
+				
+			
+			
+			
 		# if we are merely appending new servers to existing layout
 		else:
 			newServer = ""
@@ -655,62 +734,20 @@ class Cold:
 			
 			# recalculate bounds
 			self.RecalculateBounds()
-			
-		## MOVE PIECES ##
-			
-		## create list of local pieces to move to each other server in same band
-		
-		# for s in orderedAvailServers:
-			# availServers[s].MoveTo = []
-			
-			# availServers[s].SendFile("/tmp/", "filter-sha1-inbounds.sh")
-			# availServers[s].SendFile("/tmp/", "filter-sha1-outbounds.sh")
-			
-			# # find pieces not matching range s.PrevHashSpaceLowerBound, s.PrevHashSpaceUpperBound
-			# pieceListToMove = availServers[s].ListPiecesByRange("%x" % availServers[s].PrevHashSpaceLowerBound, "%x" % availServers[s].PrevHashSpaceUpperBound, False)
-			
-			# #availServers[s].RemoveFile("/tmp/filter-sha1-inbounds.sh")
-			# #availServers[s].RemoveFile("/tmp/filter-sha1-outbounds.sh")
-		
-			# continue #debug
-			
-			
-			# #for each other server:
-			# for o in orderedAvailServers:
-				# if availServers[o] == availServers[s]:
-					# continue
-				# availServers[s].MoveTo.append([])
-				# #if server is in same band as s:
-				# if availServers[o].Band == availServers[s].Band:
-					# # grep local pieces that should be moved there,
-					# pieceListThisServer = availServers[s].ListPiecesByRange(availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
-					# #and append results to MoveTo list
-					# for p in pieceListThisServer:
-						# availServers[s].MoveTo[orderedAvailServers.index(availServers[o])].append(int(p))
-						# print "moving piece %x to %s (%x, %x)" % (int(p), availServers[o].get_host(), availServers[o].HashSpaceLowerBound, availServers[o].HashSpaceUpperBound)
-		
-		
-		## create list of local pieces to move to each new band
-		# prevBandCount = max(self.ServerList[].Band)
-		# newBandCount = self.Redundancy - prevBandCount
-		# if newBandCount > 0:
-		#	for s in orderedAvailServers:
-		#		sizeToSend = float((s.HashSpaceUpperBound - s.HashSpaceLowerBound) / (prevBandCount+1))
-		#		for p in range(0, prevBandCount):
-		#			if p == 0:	# make sure the endpoints match up exactly with existing bounds
-		#				lowerBoundToSend = s.HashSpaceLowerBound
-		#				upperBoundToSend = lowerBoundToSend + sizeToSend
-		#			elif p == (prevBandCount-1):
-		#				lowerBoundToSend = s.HashSpaceUpperBound - sizeToSend
-		#				upperBoundToSend = s.HashSpaceUpperBound
-		#			else:
-		#				lowerBoundToSend = s.HashSpaceLowerBound + (sizeToSend * orderedAvailServers.index(s))
-		#				upperBoundToSend = lowerBoundToSend + sizeToSend
-		#		
+
 			
 		## write new layout to file
+		self.WriteLayout(newLayoutLists)
 			
 		## remove lock file
+			
+			
+			
+	# PURPOSE: write over previous layout file with new.
+	def self.WriteLayout(newLayoutLists):
+		
+	
+	
 			
 	# PURPOSE: after consolidation, recalculate the bounds for all servers
 	#

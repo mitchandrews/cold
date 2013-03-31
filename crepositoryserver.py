@@ -232,3 +232,25 @@ class RepositoryServer:
 		p.communicate("rm \"/tmp/.cold.%s.hashes.txt\" 2>/dev/null" % self.get_user())
 
 		return 0
+	
+	
+	# Send pieces from this RepositoryServer to targetRepositoryServer that
+	# fall within provided bounds
+	def SendPiecesByTargetRange(self, targetRepositoryServer):
+		print "%s: SendPiecesByTargetRange(%s)" % (self.get_host(), targetRepositoryServer.get_host())
+		
+		#self.ListPiecesByRange(targetRepositoryServer.HashSpaceLowerBound, targetRepositoryServer.HashSpaceUpperBound)
+		#p = subprocess.Popen(['ssh', '-T', '-q', targetRepositoryServer.get_user() + '@' + targetRepositoryServer.get_host()], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		#p.communicate("/bin/bash /tmp/mv-pieces-inbounds.sh %s@%s:%s \"%s\" </tmp/.cold.`whoami`.hashes.txt >/tmp/.cold.sentto.%s.txt" % (targetRepositoryServer.get_user(), targetRepositoryServer.get_host(), targetRepositoryServer.get_path(), self.get_path(),  targetRepositoryServer.get_host()))
+
+	
+	def DeletePiecesByRange(self, lowerBound="0000000000000000000000000000000000000000", upperBound="ffffffffffffffffffffffffffffffffffffffff"):
+		print "%s: DeletePiecesByRange(%s, %s)" % (self.get_host(), lowerBound, upperBound)
+		
+		#self.ListPiecesByRange(lowerBound, upperBound)
+		#p = subprocess.Popen(['ssh', '-T', '-q', self.get_user() + '@' + self.get_host()], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		#p.communicate("/bin/bash /tmp/rm-pieces-inbounds.sh %s %s </tmp/.cold.`whoami`.hashes.txt" % (lowerBound, upperBound))
+
+	
+	
+	
