@@ -33,6 +33,8 @@ rm -f rm-pieces-inbounds.sh*
 rm -f hashgen.sh*
 rm -f options.txt*
 rm -f layout.txt*
+rm -f layout-1.txt*
+rm -f layout-2.txt*
 
 sudo rm /tmp/.cold* /tmp/filter-sha1* 2>/dev/null
 
@@ -50,5 +52,7 @@ wget -q http://192.168.0.106:8080/repo/rm-pieces-inbounds.sh
 wget -q http://192.168.0.106:8080/repo/hashgen.sh
 wget -q http://192.168.0.106:8080/repo/options.txt
 wget -q http://192.168.0.106:8080/repo/layout.txt
+wget -q http://192.168.0.106:8080/repo/layout-1.txt
+wget -q http://192.168.0.106:8080/repo/layout-2.txt
 
 chmod 755 *.sh 2>/dev/null

@@ -72,6 +72,7 @@ class Cold:
 		#self.RedundancyOrdering = "random"
 		
 		self.Redundancy = 1
+		self.PrevRedundancy = 1
 		self.RedundancyOrdering = "usage-proportional"
 
 		# For 'usage-proportional', ServerList lists redundant servers
@@ -652,7 +653,7 @@ class Cold:
 				# clear all bands > 0
 				for s in self.ServerList:
 					if s.Band > 0:
-						s.DeletePiecesByRange()	#defaults to entire range
+						s.DeletePiecesByRange(0, int("ffffffffffffffffffffffffffffffffffffffff",16))	#defaults to entire range
 				# do first duplication:
 				
 				if self.Redundancy > 1:
@@ -744,8 +745,21 @@ class Cold:
 			
 			
 	# PURPOSE: write over previous layout file with new.
-	def self.WriteLayout(newLayoutLists):
-		
+	def WriteLayout(self, newLayoutLists):
+	
+		# remove 'layout.txt'
+		os.remove("layout.txt")
+	
+		# write new info
+		for s in self.ServerList:
+			layoutFile = file("layout.txt", "a")
+
+			# print the path to the map file
+			if s.HashSpaceLowerBound == 0:
+				layoutFile.write("%s@%s:%s:%d:0x0000000000000000000000000000000000000000:%s" % (s.get_user(), s.get_host(), s.get_path(), s.Band, str(hex(s.HashSpaceUpperBound))[0:-1]))
+			else:
+				layoutFile.write("%s@%s:%s:%d:%s:%s" % (s.get_user(), s.get_host(), s.get_path(), s.Band, str(hex(s.HashSpaceLowerBound)[0:-1]), str(hex(s.HashSpaceUpperBound))[0:-1]))
+			layoutFile.write('\n')			
 	
 	
 			

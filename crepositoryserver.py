@@ -244,8 +244,8 @@ class RepositoryServer:
 		#p.communicate("/bin/bash /tmp/mv-pieces-inbounds.sh %s@%s:%s \"%s\" </tmp/.cold.`whoami`.hashes.txt >/tmp/.cold.sentto.%s.txt" % (targetRepositoryServer.get_user(), targetRepositoryServer.get_host(), targetRepositoryServer.get_path(), self.get_path(),  targetRepositoryServer.get_host()))
 
 	
-	def DeletePiecesByRange(self, lowerBound="0000000000000000000000000000000000000000", upperBound="ffffffffffffffffffffffffffffffffffffffff"):
-		print "%s: DeletePiecesByRange(%s, %s)" % (self.get_host(), lowerBound, upperBound)
+	def DeletePiecesByRange(self, lowerBound, upperBound):
+		print "%s: DeletePiecesByRange(%x, %x)" % (self.get_host(), int(lowerBound), int(upperBound))
 		
 		#self.ListPiecesByRange(lowerBound, upperBound)
 		#p = subprocess.Popen(['ssh', '-T', '-q', self.get_user() + '@' + self.get_host()], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
