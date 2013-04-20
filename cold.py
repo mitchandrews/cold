@@ -1,11 +1,11 @@
 # Mitch Andrews
-# 10/01/10
 
 import sys
 import os
 import subprocess
 import re
 import getopt
+import sqlite3
 from ccfroutines import *
 from crepositoryserver import *
 #from cglobals import *
@@ -23,12 +23,23 @@ from ccold import *
 
 CClient = Cold()
 
-# Getopt complete argument list
-optlist, args = getopt.gnu_getopt(sys.argv[1:], 'a:c:df:hlo:pr:s:vw:',
-				['pretend', 'verbose', 'debug', 'help', 'warranty',
-				 'consolidate-layout', 'create-map', 'list-files', 'list-maps', 'print-usage', 'show-usage',
+#CClient.SQLDataSource.initDb(CClient.SQLDataSource.dbPath)
+#CClient.SQLDataSource.mkdirs("/test")
+#print "getId '/test': ", CClient.SQLDataSource.getId("/test")
+print "ls '/': ", CClient.SQLDataSource.ls("/")
 
-				 'add-server=', 'find-file=', 'list-map-files=', 'map-regex=', 'options-file=',
+## TEMPORARY -- remove this after daemonization ##
+dbSendPath = "/"
+dbReceivePath = "./receive"
+
+
+
+# Getopt complete argument list
+optlist, args = getopt.gnu_getopt(sys.argv[1:], 'a:c:df:hlo:pr:s:t:vw:',
+				['pretend', 'verbose', 'debug', 'help', 'warranty',
+				 'consolidate-layout', 'create-map', 'list-files', 'print-usage', 'show-usage',
+
+				 'add-server=', 'find-file=', 'options-file=',
 				 'outpath=' 'receive=', 'scan-subnet=', 'send-file=', 'send-to-cloud=', 'set-redundancy=', 'update-piece='])
 
 for i in optlist:
@@ -71,33 +82,6 @@ for i in optlist:
 
 		sys.exit()
 
-	elif flag == "--list-maps":
-		if CClient.DebugOutput == True:
-			print "flag: --list-maps"
-		maps = CClient.ListMaps()
-#		print "Maps:",
-		for m in maps:
-			print m
-
-		sys.exit()
-
-	elif flag == "--list-map-files":
-		if CClient.DebugOutput == True:
-			print "flag: --list-map-files %s" % val
-		contents = CClient.ListMapFiles(val)
-		print "Map file contents:"
-		for c in contents:
-			print c
-		sys.exit()
-
-	elif flag == "--map-regex":
-		if val is not None:
-			if CClient.DebugOutput == True:
-				print "flag: --map-regex %s" % val
-				CClient.SetFindFileMapRegex(val)
-		else:
-			print "Syntax Error: argument\"--max-regex\" requires an argument"
-			sys.exit()
 
 	elif flag == "-f" or flag == "--options-file":
 		if CClient.DebugOutput == True:
@@ -108,6 +92,12 @@ for i in optlist:
 		CClient.SetOutpath(val)
 		if CClient.DebugOutput == True:
 			print "flag: -o %s" % val
+			
+	elif flag == "-t":
+		CClient.SetOutpath(val)
+		if CClient.DebugOutput == True:
+			print "flag: -t %s" % val
+			dbSendPath = val
 
 
 
@@ -209,7 +199,7 @@ for i in optlist:
 		if CClient.DebugOutput == True:
 			print "flag: -r %s" % val
 		if len(val) > 0:
-			ret = CClient.ReceiveFromCloud(val)
+			ret = CClient.ReceiveFromCloud(val, dbReceivePath)
 			if len(ret) > 0:
 				print "Error receiving the following files:"
 				for f in ret:
@@ -237,7 +227,7 @@ for i in optlist:
 		if CClient.DebugOutput == True:
 			print "flag: -s %s" % val
 		if len(val) != 0:
-			ret = CClient.SendToCloud(val)
+			ret = CClient.SendToCloud(val, dbSendPath)
 		else:
 			print "ERROR: -s <path>, len(path) == 0"
 			
@@ -264,6 +254,8 @@ for i in optlist:
 		if len(err) > 0:
 			for e in err:
 				print "df server error: " + e
+		
+
 
 	# --update-piece: duplicate piece copies or delete copies across servers
 	#					to meet redundancy specifications

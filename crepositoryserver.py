@@ -1,5 +1,4 @@
 # Mitch Andrews
-# 11/15/10
 
 # cold.globals.py program dependencies:
 #  global imports (sys, os, et al)

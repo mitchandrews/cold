@@ -1,5 +1,4 @@
 # Mitch Andrews
-# 11/15/10
 
 # Cold class
 #
@@ -16,9 +15,12 @@ import re
 import hashlib
 import random
 import tempfile
+import shutil
+import sqlite3
 
 from ccfroutines import *
 from cglobals import *
+from SQLiteDataSource import *
 
 class Callable:
 	def __init__(self, anycallable):
@@ -81,6 +83,8 @@ class Cold:
 		# they will be listed in ServerList in the order A, A, B. 
 		# 'Redundancy' defines the copy count.
 		self.ServerList = []
+		
+		self.SQLDataSource = SQLiteDataSource()
 
 		self.VerboseOutput = True
 		self.DebugOutput = True
@@ -266,28 +270,8 @@ class Cold:
 
 				continue
 
-			# # Minimum Redundancy
-			# r = re.match(r'^[ \t]*minimum[-]?redundancy[ \t]*=[ \t]*(.*)$', j)
-			# if r is not None:
-				# if r.group(1).lower() != "":
-					# # todo integrity checks here
-					# self.MinimumRedundancy = int(r.group(1))
-					# if self.DebugOutput == True:
-						# print "setting minimum redundancy: " + str(self.MinimumRedundancy)
-
-				# continue
-
-			# # Maximum Redundancy
-			# r = re.match(r'^[ \t]*maximum[-]?redundancy[ \t]*=[ \t]*(.*)$', j)
-			# if r is not None:
-				# if r.group(1).lower() != "":
-					# # todo integrity checks here
-					# self.MaximumRedundancy = int(r.group(1))
-					# if self.DebugOutput == True:
-						# print "setting maximum redundancy: " + str(self.MaximumRedundancy)
-
-				# continue
-				
+			## Redundancy is now inferred from 'layout.txt' and is set elsewhere ##
+			
 			# # Redundancy
 			# r = re.match(r'^[ \t]*redundancy[ \t]*=[ \t]*(.*)$', j)
 			# if r is not None:
@@ -807,26 +791,6 @@ class Cold:
 					hashLowerBound = hashUpperBound + 1
 
 			
-			
-	# PURPOSE: given a list of servers, return the list of servers that are in self.ServerList
-	#			and NOT in the supplied list; i.e. return the complement of the list
-	def GetComplementServerList(self, serverlist):
-
-		# return variable
-		complementlist = []
-
-		# boolean flag whether or not to add
-		found = False
-		for t in self.ServerList:
-			for s in serverlist:
-				if s.get_host() == t.get_host():
-					found = True
-					#break
-			if found == False:
-				complementlist.append(t)
-			found = False
-
-		return complementlist
 
 
 	# PURPOSE: return a list up to length n of available servers using the current ordering
@@ -862,8 +826,7 @@ class Cold:
  #			print '\n'
 
  		return randomizedservers
-#
-# 	GetNRedundancyServers = Callable(GetNRedundancyServers)
+
 
 
 	# Purpose:
@@ -914,61 +877,38 @@ class Cold:
 		return FreeSpace, ErrorServers
 
 
-	# List the files in the map folder
-	# Returns:
-	#	list of filenames in self.MapPath (strings)
-	def ListMaps(self):
-		# return variable (list) containing the file names
-		filenames = []
-		if os.path.isdir(self.MapPath):
-			#os.listdir(self.MapPath)
-			maps = ShellOutputLines("ls \""+ self.MapPath + "\" | grep '.map$'")
-
-			# strip() each map of whitespace and append
-			i=0
-			while i<len(maps):
-				filenames.append(maps[i].strip())
-				i=i+1
-
-		return filenames
-
+		
 	# List the files contained in all the maps in the maps folder
 	# Returns:
 	#	list of file names (strings)
 	def ListFiles(self):
 		# return variable
 		filelist = []
+		
+		## NOT IMPLEMENTED ##
 
-		# list all maps
-		maps = self.ListMaps()
+		# # list all maps
+		# maps = self.ListMaps()
 
-		# append files from each map to return variable
-		for m in maps:
-			filelist.extend(self.ListMapFiles(m))
+		# # append files from each map to return variable
+		# for m in maps:
+			# filelist.extend(self.ListMapFiles(m))
 
 		return filelist
 
 
 	# Create the map and cache files for the supplied path,
 	# returns a list of paths to the pieces
-	def CreateMap(self, path, mapfileoption = ''):
+	def CreatePieces(self, path):
 
 		# return value
 		piecelist = []
 
-		mappath = ""
-
 		# remove trailing slash(es)
 		path = path.rstrip("/")
 
-		if mapfileoption != "":
-# and (os.path.isfile(mapfileoption) or os.path.isdir(mapfileoption)):
-			mappath = mapfileoption
-		else:
-			mappath = self.MapPath + "/" + path + ".map"
-
 		if self.DebugOutput == True:
-			print "procesing: " + path
+			print " ## Cold.CreatePieces(): " + path
 
 		# Check if it's a file
 		if os.path.isfile(path):
@@ -978,11 +918,6 @@ class Cold:
 				sys.exit()
 
 			source = file(path, "rb")
-
-			mapfile = file(mappath, "a")
-
-			# print the path to the map file
-			mapfile.write(path + '\n')
 
 			buffer = source.read(self.PieceSize*1024)
 			while len(buffer) != 0:
@@ -998,39 +933,14 @@ class Cold:
 					current_piece.write(buffer)
 					current_piece.close()
 
-				# update mapfile with hash
-				mapfile.write(md + '\n')
-
 				# append piece to return list
 				piecelist.append(md)
 
 				buffer = source.read(self.PieceSize*1024)
 
-			mapfile.close()
 			source.close()
 
-		# Loop through a whole directory
-		elif os.path.isdir(path):
-			parselist = os.listdir(path)
-
-			# if settings say to keep empty directories and the directory is empty:
-			if self.PreserveEmptyFolders == True and len(parselist) == 0:
-				mapfile = file(mappath, "a")
-				# print the path to the map file
-				mapfile.write(path + "/" + '.coldplaceholder' + '\n')
-				mapfile.close()
-
-			for f in parselist:
-				if os.access(path+"/"+f, os.R_OK) or os.path.isdir(path+"/"+f):
-					piecelist.extend(self.CreateMap(path+"/"+f, mappath))
-				else:
-					print "WARNING: cannot access %s; skipping" % path+"/"+f
-		else:
-			print "WARNING: skipping unknown file type: %s" % path
-
 		return piecelist
-
-#	CreateMap = Callable(CreateMap)
 
 
 
@@ -1167,341 +1077,130 @@ class Cold:
 	#	LookupFile = Callable(LookupFile)
 
 
-	# Purpose:  given a server list and a map, return availability
-	#
-	# returns:
-	#
-	def LookupMap(self, serverlist, path):
-		result_server_list = []
 
-		for s in serverlist:
-			if s.IsFile(path) == True:
-				result_server_list.append(s)
-		#		print "(FindPiece) IsFile %s: %s" % (s.get_host(), path)
 
-		return result_server_list
-#	LookupMap = Callable(LookupMap)
 
-
-
-	# Purpose:  given a filename, mappath, return list of pieces needed to recreate filename
-	# Returns:  list of MD5s, which are piece names.
-	#		   empty list on error.
-	def ListFilePieces(self, mappath, filename):
-	   # return variable, list of strings of MD5s
-		piecelist = []
-
-		# if we must append a ".map" to the filename, do so:
-		if (os.path.isfile(self.MapPath + "/" + mappath) == False) and (os.path.isfile(self.MapPath + "/" + mappath + ".map") == True):
-			if self.DebugOutput == True:
-				print "appending .map to filename"
-			mappath = mappath + ".map"
-
-		# read entire map file into memory
-		mapfile = file(self.MapPath + "/" + mappath, "r")
-		maplines = mapfile.readlines()
-		mapfile.close()
-
-		# strip maplines[] strings of extra whitespace
-		i=0
-		while i < len(maplines):
-			maplines[i] = maplines[i].strip()
-			i=i+1
-
-		# bool indicating whether currently iterating file is the one we want to collect pieces from
-		filematch = False
-
-		# iterate through map file lines
-		i=0
-		while i < len(maplines):
-			# cache this function call, since it's constant for the loop
-			validhash=IsValidSHA1(maplines[i])
-
-			# if the line is a name:
-			if len(maplines[i]) > 1 and validhash == False:
-				# if name matches:
-				if maplines[i] == filename:
-					# set the flag to indicate we are on the right file
-					filematch = True
-				else:
-					# We're done matching
-					filematch = False
-			# if the line is a SHA-1, and we're on the right file:
-			elif len(maplines[i]) > 1 and validhash == True and filematch == True:
-				piecelist.append(maplines[i])
-			i=i+1
-
-		return piecelist
-
-
-	# Purpose:  convert a mappath into a list of filenames, which are strings
-	#
-	# Returns:  list of strings: filenames
-	def ListMapFiles(self, mappath):
-		# return variable, list of strings of filenames
-		filenames = list()
-
-		# if we must append a ".map" to the filename, do so:
-		if (os.path.isfile(self.MapPath + "/" + mappath) == False) and (os.path.isfile(self.MapPath + "/" + mappath + ".map") == True):
-			if self.DebugOutput == True:
-				print "appending .map to filename"
-			mappath = mappath + ".map"
-
-		# read entire map file into memory
-		mapfile = file(self.MapPath + "/" + mappath, "r")
-		maplines = mapfile.readlines()
-		mapfile.close()
-
-		# strip maplines[] strings of extra whitespace
-		i=0
-		while i < len(maplines):
-			maplines[i] = maplines[i].strip()
-			i=i+1
-
-		# iterate through map file lines
-		i=0
-		while i < len(maplines):
-			# if the line is a name:
-			if len(maplines[i]) > 1 and IsValidSHA1(maplines[i]) == False:
-				# if the file name is not a placeholder for an empty directory:
-				if os.path.basename(maplines[i]) != '.coldplaceholder':
-					filenames.append(maplines[i])
-			i=i+1
-
-		return filenames
-
-
-	# Purpose:  convert a mappath into a list of piece names, which are strings of SHA1 hashes.
-	#			shorthand function for ListMapFiles()...ListFilePieces()
-	#
-	# Returns:  list of strings: piece names (SHA1 hashes)
-	def ListMapPieces(self, mappath):
-		# return variable
-		mappieces = []
-
-		# get files from map
-		mapfiles = self.ListMapFiles(mappath)
-
-		# get pieces from files
-		for f in mapfiles:
-			mappieces.extend(self.ListFilePieces(mappath, f))
-
-		return mappieces
-
-
-
-	# Purpose:  given a list of pieces and an optional server list, split into
-	#		   two lists, available and unavailable
-	# Arguments:	(optional) serverlist[]: defaults to self.ServerList, list of
-	#			   repositoryservers to reference
-	#			   piecelist[]:	list of strings which are SHA1 hashes
-	# Returns:
-	#   (available[], unavailable[])	tuple of lists of strings, which are piece names
-	def PieceSplitByAvail(self, piecelist, serverlist=[]):
-		# return variables, returned as a tuple
-		available = []
-		unavailable = []
-
-		# if zero pieces, return empty:
-		if len(piecelist) < 1:
-			return (available, unavailable)
-
-		# if no optional servers provided, default to self.ServerList
-	#	if len(serverlist) < 1:
-	 #	   serverlist = self.ServerList
-		# if no optional servers provided, leave it empty so the lookups
-		#   default to self.ServerList
-
-		# iterate through piecelist, split into two lists
-		for p in piecelist:
-			# if servers found hosting the piece:
-			if len(self.LookupPiece(p, serverlist) > 0):
-				available.append(p)
-			# else, it's offline:
-			else:
-				unavailable.append(p)
-
-		return (available, unavailable)
-
-
-	# Purpose:  given a filename, mapname, and an optional server list, split into
-	#		   two lists, available and unavailable pieces
-	# Arguments:	(optional) serverlist[]: defaults to self.ServerList, list of
-	#				   repositoryservers to reference
-	#			   mappath:	name of the map file, without ".map" extension
-	#			   filename:   name of the file to query pieces of
-	# Returns:
-	#   (available[], unavailable[])	tuple of lists of strings, which are piece names
-	def FileSplitByAvail(self, mappath, filename, serverlist=[]):
-		# return variables, returned as a tuple
-		available = []
-		unavailable = []
-
-		# default serverlist to self.ServerList
-		if len(serverlist) < 1:
-			severlist = self.ServerList
-
-		for f in self.ListMapFiles(mappath):
-			avail, unavail = self.PieceSplitByAvail(list(p in self.ListFilePieces(mappath, f)), serverlist)
-			#for p in self.ListFilePieces(mappath, f):
-			 #   avail, unavail = self.PieceSplitByAvail(serverlist, list(p))
-
-
-		return (available, unavailable)
-
-
-	# PURPOSE:	given a piece name (SHA1 hashes), either duplicate it to meet minimum
-	#			redundancy, or delete copies to meet maximum redundancy.
-	# ARGUMENTS:
-	#	piecename	(string) name of piece, always a SHA1 hashes
-	#
-	# RETURNS:
-	#	Integer		number of copies available after copying/deleting
-	# def UpdatePiece(self, piecename):
-
-		# piecename = piecename.strip()
-		# availableservers = self.LookupPiece(piecename)
-
-		# # if it is unavailable, return:
-		# if len(availableservers) == 0:
-			# # here zero indicates zero available copies, not a boolean success
-			# return 0
-
-		# # if we don't have enough available:
-		# elif len(availableservers) < self.MinimumRedundancy:
-
-			# # addcount is number we are short
-			# addcount = (self.MinimumRedundancy - len(availableservers))
-
-			# if self.DebugOutput == True:
-				# print "adding %d copies of piece %s" % (addcount, piecename)
-
-			# # create server list containing all the servers that do not
-			# # already have the piece
-			# choiceservers = self.GetComplementServerList(availableservers)
-
-			# # select which servers to copy the piece to
-			# selectedservers = self.GetNRedundancyServers(choiceservers, addcount)
-
-			# # Debug: dump server list results
-			# if self.DebugOutput == True:
-				# print "with %s: " % piecename
-				# for a in availableservers:
-					# print a.get_host()
-				# print "without %s: " % piecename
-				# for c in choiceservers:
-					# print c.get_host()
-				# print "selected for %s: " % piecename
-				# for s in selectedservers:
-					# print s.get_host()
-
-			# # Get one copy of the file from a random server that has it to send to the other hosts
-			# # Note: this will eventually be replaced with sending a command to a host with
-			# #		the piece so that the piece is transferred within the cloud
-			# sourceserver = self.GetNRedundancyServers(availableservers, 1)
-			# sourceserver.ReceiveFile(sourceserver.get_path() + "/" + piecename, self.CachePath.strip() + "/" + piecename)
-
-
-			# # Send file to hosts
-			# for s in selectedservers:
-				# s.SendFile(s.get_path() + "/" + piecename, self.CachePath.strip() + "/" + piecename)
-
-			# # Return new total number of copies
-			# return len(availableservers) + addcount
-
-
-
-		# elif len(availableservers) > self.MaximumRedundancy:
-
-			# # remcount is number we are over maximum
-			# remcount = (self.MaximumRedundancy - len(availableservers))
-
-			# if self.DebugOutput == True:
-				# print "removing %d copies of piece %s" % (remcount, piecename)
-
-			# # select which servers to copy the piece to
-			# selectedservers = self.GetNRedundancyServers(availableservers, addcount)
-
-			# for s in selectedservers:
-				# if self.DebugOutput == True:
-					# print "removing from host: " + s.get_host()
-				# s.RemoveFile(s.get_path() + "/" + piecename)
-
-			# # Return new total number of copies
-			# return len(availableservers) - remcount
-
-
-	# PURPOSE:	given a map path, update each contained piece to meet
-	#			redundancy specs by calling self.UpdatePiece()
-	# ARGUMENTS:
-	#	mappath				(string)
-	#
-	# RETURNS:
-	#	(List, List)		( [list of strings] names of pieces that are unavailable
-	#						  [list of strings] names of files that are not completely available )
-	# def UpdateMap(self, mappath):
-
-		# # return variables
-		# totaldownpieces = []
-		# totaldownfiles = []
-
-# #		# get pieces
-# #		mappieces = self.ListMapPieces(mappath)
-# #		uppieces, downpieces = self.PieceSplitByAvail(mappieces)
-
-		# # get files
-		# mapfiles = self.ListMapFiles(mappath)
-
-		# for f in mapfiles:
-			# uppieces, downpieces = self.FileSplitByAvail(mappath, f)
-
-			# if len(downpieces) > 0:
-				# # add count to return var
-				# totaldownpieces.extend(downpieces)
-
-				# # add file to down list
-				# totaldownfiles.append(f)
-
-			# # update each available piece, even if file is not totally available
-			# for p in uppieces:
-				# self.UpdatePiece(p)
-
-		# # return tuple of list of strings
-		# return (totaldownpieces, totaldownfiles)
-
-
-
-
+	# # Purpose:  given a list of pieces and an optional server list, split into
+	# #		   two lists, available and unavailable
+	# # Arguments:	(optional) serverlist[]: defaults to self.ServerList, list of
+	# #			   repositoryservers to reference
+	# #			   piecelist[]:	list of strings which are SHA1 hashes
+	# # Returns:
+	# #   (available[], unavailable[])	tuple of lists of strings, which are piece names
+	# def PieceSplitByAvail(self, piecelist, serverlist=[]):
+		# # return variables, returned as a tuple
+		# available = []
+		# unavailable = []
+
+		# # if zero pieces, return empty:
+		# if len(piecelist) < 1:
+			# return (available, unavailable)
+
+		# # if no optional servers provided, default to self.ServerList
+	# #	if len(serverlist) < 1:
+	 # #	   serverlist = self.ServerList
+		# # if no optional servers provided, leave it empty so the lookups
+		# #   default to self.ServerList
+
+		# # iterate through piecelist, split into two lists
+		# for p in piecelist:
+			# # if servers found hosting the piece:
+			# if len(self.LookupPiece(p, serverlist) > 0):
+				# available.append(p)
+			# # else, it's offline:
+			# else:
+				# unavailable.append(p)
+
+		# return (available, unavailable)
+
+
+	# # Purpose:  given a filename, mapname, and an optional server list, split into
+	# #		   two lists, available and unavailable pieces
+	# # Arguments:	(optional) serverlist[]: defaults to self.ServerList, list of
+	# #				   repositoryservers to reference
+	# #			   mappath:	name of the map file, without ".map" extension
+	# #			   filename:   name of the file to query pieces of
+	# # Returns:
+	# #   (available[], unavailable[])	tuple of lists of strings, which are piece names
+	# def FileSplitByAvail(self, mappath, filename, serverlist=[]):
+		# # return variables, returned as a tuple
+		# available = []
+		# unavailable = []
+
+		# # default serverlist to self.ServerList
+		# if len(serverlist) < 1:
+			# severlist = self.ServerList
+
+		# for f in self.ListMapFiles(mappath):
+			# avail, unavail = self.PieceSplitByAvail(list(p in self.ListFilePieces(mappath, f)), serverlist)
+			# #for p in self.ListFilePieces(mappath, f):
+			 # #   avail, unavail = self.PieceSplitByAvail(serverlist, list(p))
+
+
+		# return (available, unavailable)
 
 
 	# Purpose:
-	#	Send 'path' to the cloud by chopping into pieces, making a map,
+	#	Send 'path' to the cloud by chopping into pieces, creating a db entry,
 	#	and distributing pieces
 	# Called by -s [--send] flag
-	def SendToCloud(self, path):
-
-		PieceList = self.CreateMap(path)
+	def SendToCloud(self, localPath, dbPath):
+		print " ## SendToCloud", localPath, dbPath
 		
-		for p in PieceList:
+		# if directory:
+		if os.path.isdir(localPath):
+		
+			dirName = os.path.normpath(localPath).split('/')[-1]
+			#dirName = os.path.basename(localPath)
+			
+			# get directory contents
+			dirContents = os.listdir(localPath)
+			
+			for f in dirContents:
+				if f == "." or f == "..":
+					continue
+					
+				# Make subdir in db
+				self.SQLDataSource.mkdirs(dbPath + "/" + dirName)
+				
+				# Recurse to subfiles
+				self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName + "/" + f)
+				
+			return
+			
+		# if regular file:
+		elif os.path.isfile(localPath):
+		
+			fileName = os.path.normpath(localPath).split('/')[-1]
+			pathName = os.path.dirname(os.path.normpath(localPath))
+		
+			PieceList = self.CreatePieces(localPath)
+			
+			for p in PieceList:
 				p = p.strip()
+					
+			# Write DB entries for file & pieces
+			self.SQLDataSource.createFile(pathName + "/" + fileName, PieceList)
 
-		if self.DebugOutput == True:
-			print "SendToCloud() PieceList: "
-			for p in PieceList:
-				print "  " + p
+			if self.DebugOutput == True:
+				print "SendToCloud() PieceList: "
+				for p in PieceList:
+					print "  " + p
 
-		if self.RedundancyOrdering == "usage-proportional":
-			for p in PieceList:
-				for s in self.ServerList:
-					print "%s bounds: [%x, %x]" % (s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
-					if s.HashSpaceLowerBound <= int(p,16) and int(p,16) <= s.HashSpaceUpperBound:
-						# copy piece to 's'
-						print "sending %x to %s!" % (int(p,16), s.get_host())
-						s.SendFile(s.get_path() + "/" + p, self.CachePath.strip() + "/" + p)
-						if self.DebugOutput == True:
-							print "Invalidating DfCache: " + s.get_host()
+			if self.RedundancyOrdering == "usage-proportional":
+				for p in PieceList:
+					for s in self.ServerList:
+						#print "%s bounds: [%x, %x]" % (s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
+						if s.HashSpaceLowerBound <= int(p,16) and int(p,16) <= s.HashSpaceUpperBound:
+							# copy piece to 's'
+							print "Uploading %x to %s [%x, %x]" % (int(p,16), s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
+							s.SendFile(s.get_path() + "/" + p, self.CachePath.strip() + "/" + p)
+							#if self.DebugOutput == True:
+								#print "Invalidating DfCache: " + s.get_host()
 							s.DfCacheIsCurrent = False
-				print
+					print
+				
+		return
 				
 		
 		
@@ -1562,7 +1261,7 @@ class Cold:
 
 
 	# PURPOSE:
-	# Collect pieces listed in <mappath> and reassemble them into <destpath>
+	# Collect pieces listed in <mappath> and reassemble them into <destPath>
 	#  if namelist is not empty, only the names listed are restored.
 	#
 	# NOTES:
@@ -1571,39 +1270,29 @@ class Cold:
 	#
 	# RETURNS:
 	#	list of error files
-	def ReceiveFromCloud(self, mappath, destpath = '', namelist = []):
+	#def ReceiveFromCloud(self, destPath, destPath):
+	def ReceiveFromCloud(self, dbPath, destPath):
+		print " ## ReceiveFromCloud:", dbPath, destPath
 
 		# return data, list of files with errors
 		errorfiles = []
 
-		# assert existence
-		if (os.path.isfile(self.MapPath + "/" + mappath) == False) and (os.path.isfile(self.MapPath + "/" + mappath + ".map") == False):
-			print "ERROR: ReceiveFromCloud() map file not found: " + mappath
-			errorfiles.append(mappath)
-			return errorfiles
-
-		# if we must append a ".map" to the filename, do so:
-		if (os.path.isfile(self.MapPath + "/" + mappath) == False) and (os.path.isfile(self.MapPath + "/" + mappath + ".map") == True):
-			if self.DebugOutput == True:
-				print "appending .map to filename"
-			mappath = mappath + ".map"
-
-		# if the destpath is supplied, then
+		# if the destPath is supplied, then
 		# if the destination is an existing file, change it to the file's path
 		#  so it's the directory where the file is
-		if len(destpath) > 0:
-			if os.path.isfile(destpath) == True:
-				desthpath = os.path.dirname(destpath)
-			elif os.path.isdir(destpath) == False:
-				print "ERROR: ReceiveFromCloud() destination path not found: " + destpath
-				errorfiles.append(destpath)
+		if len(destPath) > 0:
+			if os.path.isfile(destPath) == True:
+				desthpath = os.path.dirname(destPath)
+			elif os.path.isdir(destPath) == False:
+				print "ERROR: ReceiveFromCloud() destination path not found: " + destPath
+				errorfiles.append(destPath)
 				return errorfiles
-		# if destpath is not supplied, default to the class's Outpath
+		# if destPath is not supplied, default to the class's Outpath
 		else:
 			# if the class option exists, use it:
 			if len(self.Outpath) > 0:
-				destpath = self.Outpath
-				print "destpath := " + self.Outpath
+				destPath = self.Outpath
+				print "destPath := " + self.Outpath
 				if not os.path.exists(self.Outpath):
 					os.makedirs(self.Outpath)
 			# otherwise, return an error
@@ -1613,148 +1302,93 @@ class Cold:
 				return errorfiles
 
 		#debug
-		print "using destpath: " + destpath
-
-
-		# read entire map file into memory
-		mapfile = file(self.MapPath + "/" + mappath, "r")
-		maplines = mapfile.readlines()
-		mapfile.close()
+		print " ## ReceiveFromCloud Destination path:", destPath
 
 		tempfilepath = tempfile.mkdtemp()
 
 		if self.DebugOutput == True:
-			print "using temporary file path: " + tempfilepath
+			print " ## ReceiveFromCloud using temporary file path:", tempfilepath
 
-		# working file information
-		currentfilename = ""
-		# list of piece names, which are all SHA1 hashes
-		pieces = []
-		# list of lists.  outer list corresponds to each piece in pieces[],
-		#  inner list is of hosting servers
-		availabilitylist = []
 		# 'unavailable' flag is set in the lookup loop below if a piece has been
 		#  identified as missing, so the rest of the file is ignored
 		unavailable = False
-
-		# strip maplines[] strings of extra whitespace
-		i=0
-		while i < len(maplines):
-			maplines[i] = maplines[i].strip()
-			i=i+1
-
-		# iterate through map file lines
-		i=0
-		while i < len(maplines):
-
-			#debug
-			print "processing line: " + maplines[i]
-
-			# if the line is a name:
-			if len(maplines[i]) > 1 and IsValidSHA1(maplines[i]) == False:
-
-				#debug
-				print "if1 : " + maplines[i]
-
-				# if the file name is a placeholder for an empty directory:
-				if os.path.basename(maplines[i]) == '.coldplaceholder':
-					#debug
-					print "making empty directory: " + destpath + "/" + os.path.dirname(maplines[i])
-					# if doesn't already exist (sanity check):
-					if not os.path.isdir(destpath + "/" + os.path.dirname(maplines[i])):
-						# make the empty folder
-						os.makedirs(destpath + "/" + os.path.dirname(maplines[i]))
-					i=i+1
-					continue
-
-				# and if namelist is not empty, verify the name is somewhere in the list:
-				elif (len(namelist) == 0) or (len(namelist) > 0 and namelist.count(maplines[i]) > 0):
-					# reset the current file state
-					print "looking up next file: " + maplines[i]
-					currentfilename = maplines[i]
-					pieces = []
-					availability = []
-					unavailable = False
-
-			# if the line is an SHA1 hashes:
-			elif len(maplines[i]) > 0 and IsValidSHA1(maplines[i]) == True:
-				pieces.append(maplines[i])
-				#debug
-				print "looking up piece: " + maplines[i]
-
-				# get piece availability
-				servers = self.LookupPiece(maplines[i], self.ServerList)
-
-				# if not available:
-				if len(servers) < 1:
-					# print 'piece unavailable' message
-					print "ERROR: piece %s unavailable for file %s; skipping" % (maplines[i], currentfilename)
-					unavailable = True
-				# if available:
-				else:
-					# append servers (a list) to availabilitylist
-					availabilitylist.append(servers);
-
-			#debug
-	#		print "if: " + str(len(pieces)) + " " + str(unavailable)
-
-
-			# if this is the last line, and we have pieces, and it's available, collect:
-			collect = False
-			if i == (len(maplines)-1):
-				if len(pieces) > 0 and unavailable == False:
-					print "last line: " + maplines[i]
-					collect = True
-				else:
-					collect = False
-			else:
-				collect = bool(len(pieces) > 0 and unavailable == False and IsValidSHA1(maplines[i+1].strip()) == False)
-
-			# if the next line is all the pieces are available, collect the file:
-			if collect:
-				# debug
-				if self.DebugOutput == True:
-					print "collecting file: " + currentfilename + " (" + str(len(pieces)) + " pieces)"
-
-				# copy each piece to our tempfilepath
-				for p in pieces:
-					# pop the front of the list, which gives us a list of all servers with the piece available
-					all_servers = availabilitylist.pop(0)
-					
-					# debug
-					print "found copy count: %d" % len(all_servers)
-
-					# trim the number of servers down to however many we want to copy from simultaneously,
-					#  which is hardcoded to 1 for now
-					server = self.GetNRedundancyServers(all_servers, 1).pop()
-
-					# debug
-					print "downloading piece: " + p
-
-					if server is not None:
-						#!wrong! server.ReceiveFromCloud(p, tempfilepath + "/" + p)
-						# debug
-					#	print "GFFS(): " + server.get_host() + " " + server.get_user() + " " + server.get_path() + "/" + p + " " + tempfilepath + "/" + p
-						passes = GetFileFromServer(server.get_host(), server.get_user(), server.get_path() + "/" + p, tempfilepath + "/" + p)
-
-					#	print "passes: " + str(passes)
-
-					# if our ReceiveFromCloud didn't make a sizeable file, error and return
+		
+	
+		
+		# get id of dbPath
+		(id, type) = self.SQLDataSource.getId(dbPath)
+		
+		# if directory, list contents and recurse
+		if type == 1:
+			print " ## ReceiveFromCloud processing folder:", dbPath
+			
+			dirName = os.path.normpath(dbPath).split('/')[-1]
+			
+			# Iterate through contents, expanding each
+			dirContents = self.SQLDataSource.ls(dbPath)
+			for f in dirContents:
+				if not os.path.exists(destPath + "/" + dirName):
+					os.makedirs(destPath + "/" + dirName)
+				self.ReceiveFromCloud(dbPath + "/" + f, destPath + "/" + dirName)
+			
+			
+		
+		# else if file, gather file
+		elif type == 0:
+			print " ## ReceiveFromCloud processing file:", dbPath
+		
+			fileName = os.path.normpath(dbPath).split('/')[-1]
+			
+			# get piece list
+			pieceList = self.SQLDataSource.listFilePieces(dbPath)
+			
+			# get pieces
+			for p in pieceList:
+				
+				print " ## ReceiveFromCloud processing piece:", p
+				
+				# generate list of servers hosting 'p'
+				serverAlternatives = []
+				
+				for s in self.ServerList:
+					#print "%s bounds: [%x, %x]" % (s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
+					if s.HashSpaceLowerBound <= int(p,16) and int(p,16) <= s.HashSpaceUpperBound:
+						serverAlternatives.append(s)
+						
+				# trim the number of servers down to however many we want to copy from simultaneously,
+				#  which is hardcoded to 1 for now
+				server = self.GetNRedundancyServers(serverAlternatives, 1).pop()
+				
+				if server is not None:
+					passes = GetFileFromServer(server.get_host(), server.get_user(), server.get_path() + "/" + p, tempfilepath + "/" + p)
+		
 					if os.path.exists(tempfilepath + "/" + p):
+					
 						if os.path.getsize(tempfilepath + "/" + p) < 1:
 							print "ERROR: piece size 0: " + p
 							errorfiles.append(p)
-							return errorfiles
+							unavailable = True
+							
+						# it's hard to tell, but right here is the non-error path out of these 'if's.. :P
+						
 					else:
 						print "ERROR: does not exist: " + tempfilepath + "/" + p
 						errorfiles.append(p)
-						return errorfiles
-
+						unavailable = True
+				else:
+					print "ERROR: no server found: " + tempfilepath + "/" + p
+					errorfiles.append(p)
+					unavailable = True
+						
+						
+			# If all the pieces copied in correctly
+			if not unavailable:
+			
 				# concatenate each piece to the final file
-				if not os.path.exists(os.path.dirname(destpath + "/" + currentfilename)):
-					os.makedirs(os.path.dirname(destpath + "/" + currentfilename))
-				outfile = file(destpath + "/" + currentfilename, "wb")
-				for p in pieces:
+				if not os.path.exists(os.path.dirname(destPath + "/" + fileName)):
+					os.makedirs(os.path.dirname(destPath + "/" + fileName))
+				outfile = file(destPath + "/" + fileName, "wb")
+				for p in pieceList:
 					if self.DebugOutput == True:
 						print "writing piece: " + p
 					infile = file(tempfilepath + "/" + p)
@@ -1763,10 +1397,18 @@ class Cold:
 				outfile.close()
 
 				#debug
-				print "successfully downloaded: " + destpath + "/" + currentfilename
-
-			i=i+1
+				print "successfully downloaded: " + destPath + "/" + fileName
+				
+				
+			## REMOVE LOCAL PIECES ##
+			try:
+				shutil.rmtree(tempfilepath)
+			except OSError, e:
+				pass
+			
+						
 		return errorfiles
+
 
 	# FindFile:
 	# ARGUMENTS:
@@ -1887,40 +1529,5 @@ class Cold:
 
 						# append to return var
 						matches.append(m + ":" + l)
-
-		return matches
-
-	# FindMap:
-	# ARGUMENTS:
-	#	mapregex:		regex applied to all maps in self.MapPath, matching
-	#						maps are returned as a list
-	# RETURNS:
-	#	list:			list of strings, which are names of matching map files
-	#						w/o ".map" extension
-	# PURPOSE:
-	#	given an optional regex, return the names of maps that match
-	def FindMap(self, mapregex='[a-zA-Z0-9/\-._]*'):
-		matches = []
-
-		# list all maps
-		out = os.listdir(self.MapPath)
-
-		# remove the ".map" extensions
-		i=0
-		while i < len(out):
-			if out[i][len(out[i])-4:] == ".map":
-				out[i] = str(out[i][:len(out[i])-4])
-			i=i+1
-
-		# get the maps matching the parameter regex, if given:
-		# (equivalent to `ls $mappath $mapregex` in bash)
-		if len(mapregex) > 0:
-			if self.DebugOutput == True:
-				print "applying map regex: " + mapregex
-
-			for o in out:
-				r = re.match(mapregex, o)
-				if r is not None:
-					mapmatches.append(o)
 
 		return matches
