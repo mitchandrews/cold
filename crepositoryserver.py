@@ -58,7 +58,7 @@ class RepositoryServer:
 		return self.path.strip()
 
 	def print_info(self):
-		print "=== %s@%s:%s ===\n(( %d 0x%x:0x%x ))" % (self.user, self.host, self.path, self.Band, self.HashSpaceLowerBound, self.HashSpaceUpperBound)
+		print "=== %s@%s:%s === [ %d 0x%x:0x%x ]".strip() % (self.user, self.host, self.path, self.Band, self.HashSpaceLowerBound, self.HashSpaceUpperBound)
 
 
 

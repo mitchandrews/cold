@@ -17,6 +17,8 @@ import random
 import tempfile
 import shutil
 import sqlite3
+import threading
+import time
 
 from ccfroutines import *
 from cglobals import *
@@ -48,6 +50,8 @@ class LookupResultStruct:
 		# total # of files
 		self.filecount = -1
 
+
+		
 class Cold:
 
 	def __init__(self):
@@ -76,6 +80,10 @@ class Cold:
 		self.Redundancy = 1
 		self.PrevRedundancy = 1
 		self.RedundancyOrdering = "usage-proportional"
+		
+		self.MaxTransferThreads = 10
+		self.WaitingSendJobs = []
+		self.WaitingRecvJobs = []
 
 		# For 'usage-proportional', ServerList lists redundant servers
 		# together, for example, if there is 1 redundant servers among
@@ -94,6 +102,40 @@ class Cold:
 
 		if not os.path.isdir(self.CachePath):
 			os.mkdir(self.CachePath)
+			
+	## CREDIT DUE:
+	#	* http://www.tutorialspoint.com/python/python_multithreading.htm
+	class TransferThread(threading.Thread):
+		def __init__(self, threadID, maxThreads, sendJobQ, recvJobQ, serverList):
+			threading.Thread.__init__(self)
+			self.threadID = threadID
+			
+			# transferred in from Cold class
+			self.MaxTransferThreads = maxThreads
+			self.WaitingSendJobs = sendJobQ
+			self.WaitingRecvJobs = recvJobQ
+			self.ServerList = serverList
+			
+			
+		def run(self):
+				
+			# do only those that are on servers where index modulus 10 equals thread index
+			for j in self.WaitingSendJobs:
+				if ((j[0] % self.MaxTransferThreads) - 1) == self.threadID:
+					time.sleep(random.random() / 10)
+					print " # Thread", self.threadID, "claiming job", self.WaitingSendJobs.index(j), j[0], j[1], j[2]
+					(index, arga, argb) = self.WaitingSendJobs[self.WaitingSendJobs.index(j)][0], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][1], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][2]
+					print index, arga, argb
+					self.ServerList[index].SendFile(arga, argb)
+					
+			for j in self.WaitingRecvJobs:
+				if ((j[0] % self.MaxTransferThreads) - 1) == self.threadID:
+					time.sleep(random.random() / 10)
+					print " # Thread", self.threadID, "claiming job", self.WaitingRecvJobs.index(j), j[0], j[1], j[2]
+					(index, arga, argb) = self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][0], self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][1], self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][2]
+					print index, arga, argb
+					while not os.path.isfile(argb):
+						self.ServerList[index].ReceiveFile(arga, argb)
 
 
 	# Get/Set the options file
@@ -332,6 +374,8 @@ class Cold:
 			r = re.match(r'^[ \t]*[^#](.*)$', j)
 			if r is not None:
 			
+				
+			
 				# todo integrity checks here
 				#  (or conglomorate environment sanity check after loading file)
 
@@ -370,7 +414,7 @@ class Cold:
 					MuteSSHLogin(rs.get_host(), rs.get_user())
 				else:
 					print "Fatal Error: password required for SSH to %s@%s" % (rs.get_user(), rs.get_host())
-
+				
 				# Check free space in MB, only add server if minimum is met
 				MBfree = rs.Df()/1024
 				if MBfree < float(self.ServerFreeMinMB):
@@ -378,9 +422,9 @@ class Cold:
 					continue
 					
 				self.ServerList.append(rs)
+				
 				if self.DebugOutput == True:
 					rs.print_info()
-
 				continue
 
 #	LoadOptions = Callable(LoadOptions)
@@ -1194,12 +1238,33 @@ class Cold:
 						if s.HashSpaceLowerBound <= int(p,16) and int(p,16) <= s.HashSpaceUpperBound:
 							# copy piece to 's'
 							print "Uploading %x to %s [%x, %x]" % (int(p,16), s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
-							s.SendFile(s.get_path() + "/" + p, self.CachePath.strip() + "/" + p)
+							
+							self.WaitingSendJobs.append([self.ServerList.index(s), s.get_path() + "/" + p, self.CachePath.strip() + "/" + p])
+							#s.SendFile(s.get_path() + "/" + p, self.CachePath.strip() + "/" + p)
+							
 							#if self.DebugOutput == True:
 								#print "Invalidating DfCache: " + s.get_host()
 							s.DfCacheIsCurrent = False
-					print
-				
+		
+		
+		# spawn threads
+		print " ## SendToCloud threads starting!"
+		activeThreads = []
+		for t in range(0, self.MaxTransferThreads):
+			n = self.TransferThread(t, self.MaxTransferThreads, self.WaitingSendJobs, [], self.ServerList)
+			activeThreads.append(n)
+		
+		# start threads
+		for t in range(0, self.MaxTransferThreads):
+			activeThreads[t].start()
+			
+		# wait for threads to finish
+		for t in range(0, self.MaxTransferThreads):
+			activeThreads[t].join()
+			
+		print " ## SendToCloud threads done!"
+		self.WaitingSendJobs = []
+		
 		return
 				
 		
@@ -1360,30 +1425,56 @@ class Cold:
 				server = self.GetNRedundancyServers(serverAlternatives, 1).pop()
 				
 				if server is not None:
-					passes = GetFileFromServer(server.get_host(), server.get_user(), server.get_path() + "/" + p, tempfilepath + "/" + p)
+					#passes = GetFileFromServer(server.get_host(), server.get_user(), server.get_path() + "/" + p, tempfilepath + "/" + p)
+					self.WaitingRecvJobs.append([self.ServerList.index(server), server.get_path() + "/" + p, tempfilepath + "/" + p])
 		
-					if os.path.exists(tempfilepath + "/" + p):
+					# if os.path.exists(tempfilepath + "/" + p):
 					
-						if os.path.getsize(tempfilepath + "/" + p) < 1:
-							print "ERROR: piece size 0: " + p
-							errorfiles.append(p)
-							unavailable = True
+						# if os.path.getsize(tempfilepath + "/" + p) < 1:
+							# print "ERROR: piece size 0: " + p
+							# errorfiles.append(p)
+							# unavailable = True
 							
-						# it's hard to tell, but right here is the non-error path out of these 'if's.. :P
+						# # it's hard to tell, but right here is the non-error path out of these 'if's.. :P
 						
-					else:
-						print "ERROR: does not exist: " + tempfilepath + "/" + p
-						errorfiles.append(p)
-						unavailable = True
-				else:
-					print "ERROR: no server found: " + tempfilepath + "/" + p
-					errorfiles.append(p)
-					unavailable = True
-						
-						
-			# If all the pieces copied in correctly
-			if not unavailable:
+					# else:
+						# print "ERROR: does not exist: " + tempfilepath + "/" + p
+						# errorfiles.append(p)
+						# unavailable = True
+				# else:
+					# print "ERROR: no server found: " + tempfilepath + "/" + p
+					# errorfiles.append(p)
+					# unavailable = True
+				
+				
+				
+			# spawn threads
+			print " ## ReceiveFromCloud threads starting!"
+			activeThreads = []
+			for t in range(0, self.MaxTransferThreads):
+				n = self.TransferThread(t, self.MaxTransferThreads, [], self.WaitingRecvJobs, self.ServerList)
+				activeThreads.append(n)
 			
+			# start threads
+			for t in range(0, self.MaxTransferThreads):
+				activeThreads[t].start()
+				
+			# wait for threads to finish
+			for t in range(0, self.MaxTransferThreads):
+				activeThreads[t].join()
+				
+			print " ## ReceiveFromCloud threads done!"
+			self.WaitingRecvJobs = []
+						
+			available = True
+			for p in pieceList:
+				# If we copied something in for every request
+				if not os.path.isfile(tempfilepath + "/" + p):
+					available = False
+				elif os.path.getsize(tempfilepath + "/" + p) < 1:
+					available = False
+			
+			if available:
 				# concatenate each piece to the final file
 				if not os.path.exists(os.path.dirname(destPath + "/" + fileName)):
 					os.makedirs(os.path.dirname(destPath + "/" + fileName))

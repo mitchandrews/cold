@@ -5,7 +5,10 @@ import os
 import subprocess
 import re
 import getopt
+import random
 import sqlite3
+import time
+
 from ccfroutines import *
 from crepositoryserver import *
 #from cglobals import *
@@ -20,6 +23,8 @@ from ccold import *
 #print "---------"
 #for i in range(0, len(output)):
 #	print "output[%d]: %s/%s" % (i, path, output[i])
+
+random.seed()
 
 CClient = Cold()
 

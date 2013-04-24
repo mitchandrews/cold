@@ -106,7 +106,7 @@ def SendFileToServer(host, user, remotepath, localpath):
 
 	scpstring = user + "@" + host + ":" + remotepath
 
-	print "scp: " + localpath.strip() + " " + scpstring.strip()
+	#print "scp: " + localpath.strip() + " " + scpstring.strip()
 
 	p = subprocess.Popen(['scp', localpath, scpstring], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 #	p.terminate()
@@ -182,8 +182,7 @@ def HasPasswordlessSSH(host, user):
 	#  $ ssh -o 'PreferredAuthentications=publickey' cold@ppgbox "echo"
 	#  which prints "Permission denied (publickey,keyboard-interactive)." on failure, empty on success
 #	p = subprocess.Popen(['ssh', '-o \'PreferredAuthentications=publickey\'', user + '@' + host, 'echo'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-	ret = subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', user + '@' + host, 'echo'])
-
+	ret = subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', user + '@' + host, 'echo'], stdout=subprocess.PIPE)
 #	print "ret: %i" % ret
 
 	if ret == 0:
@@ -195,7 +194,7 @@ def HasPasswordlessSSH(host, user):
 # assumes a password-less login
 def MuteSSHLogin(host, user):
 	# Verify passwordless
-	if subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', user + '@' + host, 'echo']) == 0:
+	if subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', user + '@' + host, 'echo'], stdout=subprocess.PIPE) == 0:
 		p = subprocess.Popen(['ssh', '-T', user + '@' + host, 'touch .hushlogin'])
 
 
