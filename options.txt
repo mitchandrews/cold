@@ -3,7 +3,6 @@ verbose = true
 debug = true
 logfile = cold.log.txt
 precache = false
-preserve-empty-folders = true
 
 
 # delete pieces stored locally after this many hours
@@ -14,10 +13,6 @@ preserve-empty-folders = true
 # (pieces deleted oldest first)
 %local-cache-size-limit = 20
 
-# map path contains both maps and atlases
-#	%created if it doesn't exist
-map-path = ./maps
-
 # created if it doesn't exist
 #cache-path = ~/cold/.cache
 
@@ -26,14 +21,9 @@ piece-size = 1024
 
 ### Server options ###
 
-# Choose either of these:
+# Choose one of these:
 server-free-minimum-mb = 50
 %#server-free-minimum-gb = 2
 
 %server-repository-size-limit-mb = 1024
-#minimum-redundancy = 1
-#maximum-redundancy = 5
-redundancy = 2
 
-# only one ordering option is available for now
-redundancy-ordering = usage-proportional

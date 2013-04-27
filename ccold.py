@@ -1,3 +1,5 @@
+#!/usr/bin/python
+#
 # Mitch Andrews
 
 # Cold class
@@ -13,6 +15,7 @@ import os
 import subprocess
 import re
 import hashlib
+import paramiko
 import random
 import tempfile
 import shutil
@@ -28,54 +31,20 @@ class Callable:
 	def __init__(self, anycallable):
 		self.__call__ = anycallable
 
-
-
-# This holds the results of a LookupFile() or LookupPiece() call.
-# Data only, no methods
-class LookupResultStruct:
-	def __init__(self):
-		# names of pieces not 100%  available
-		self.unavailablepieces = []
-		# names of pieces 100%  available
-		self.availablepieces = []
-
-		# names of files not 100%  available
-		self.unavailablefiles = []
-		# names of files 100%  available
-		self.availablefiles = []
-
-		# total # of pieces
-		self.piececount = -1
-
-		# total # of files
-		self.filecount = -1
-
-
 		
 class Cold:
 
 	def __init__(self):
 		self.OptionsF = "options.txt"
 		self.LogF = "log.txt"
-		self.RepositoryPath = "./repository"
 		self.CachePath = ModulePathAbs + "/.cache"
-		self.Outpath = "."
 
 		self.EnableServerCache = False
-
-		self.PreserveEmptyFolders = True
+		
+		self.PieceSize = 2048
 
 		# servers with less than this available space will throw errors
-		self.ServerFreeMinMB = 2048
-
-		self.PieceSize = 2048
-		self.PiecePath = "./pieces"
-		self.MapPath = "./maps"
-		
-		# obsolete
-		#self.MinimumRedundancy = 1
-		#self.MaximumRedundancy = 5
-		#self.RedundancyOrdering = "random"
+		self.ServerFreeMinMB = 2048	
 		
 		self.Redundancy = 1
 		self.PrevRedundancy = 1
@@ -91,6 +60,9 @@ class Cold:
 		# they will be listed in ServerList in the order A, A, B. 
 		# 'Redundancy' defines the copy count.
 		self.ServerList = []
+		self.ServerSSHCons = []
+		self.SSHPrivateKeyFile = "id_rsa_cold"
+		self.SSHPublicKeyFile = "id_rsa_cold.pub"
 		
 		self.SQLDataSource = SQLiteDataSource()
 
@@ -98,7 +70,6 @@ class Cold:
 		self.DebugOutput = True
 		self.PretendMode = False
 
-		self.FindFileMapRegex = ''
 
 		if not os.path.isdir(self.CachePath):
 			os.mkdir(self.CachePath)
@@ -125,7 +96,7 @@ class Cold:
 					time.sleep(random.random() / 10)
 					print " # Thread", self.threadID, "claiming job", self.WaitingSendJobs.index(j), j[0], j[1], j[2]
 					(index, arga, argb) = self.WaitingSendJobs[self.WaitingSendJobs.index(j)][0], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][1], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][2]
-					print index, arga, argb
+					#print index, arga, argb
 					self.ServerList[index].SendFile(arga, argb)
 					
 			for j in self.WaitingRecvJobs:
@@ -133,11 +104,82 @@ class Cold:
 					time.sleep(random.random() / 10)
 					print " # Thread", self.threadID, "claiming job", self.WaitingRecvJobs.index(j), j[0], j[1], j[2]
 					(index, arga, argb) = self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][0], self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][1], self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][2]
-					print index, arga, argb
+					#print index, arga, argb
 					while not os.path.isfile(argb):
 						self.ServerList[index].ReceiveFile(arga, argb)
+						time.sleep(random.random() / 10)
+						#print "## ReceiveFile attempt:", arga, argb
 
-
+	
+	class AddServerThread(threading.Thread):
+		def __init__(self, threadID, threadCount, serverList, minFreeMB, SSHCons, pubKeyFile, privKeyFile):
+			threading.Thread.__init__(self)
+			self.threadID = threadID
+			self.threadCount = threadCount
+			self.minFreeMB = minFreeMB
+			
+			# transferred in from Cold class
+			self.ServerList = serverList
+			self.ServerSSHCons = SSHCons
+			self.SSHPublicKeyFile = pubKeyFile
+			self.SSHPrivateKeyFile = privKeyFile
+			
+		def run(self):
+			time.sleep(random.random() / 10)
+			
+			for i in range(0, len(self.ServerList)):
+				if not ((i % self.threadCount) == self.threadID):
+					continue
+			
+				print " # Thread", self.threadID, "adding server:", self.ServerList[i].get_host()
+				
+				## Check if host is down ##
+				
+				if HasPasswordlessSSH(self.ServerList[i].get_host(), self.ServerList[i].get_user()):
+					MuteSSHLogin(self.ServerList[i].get_host(), self.ServerList[i].get_user())
+				else:
+					print "Fatal Error: password required for SSH to %s@%s" % (self.ServerList[i].get_user(), self.ServerList[i].get_host())
+					self.ServerList[self.ServerList[i]].Band = -4
+					continue
+				
+				# Check free space in MB, only add server if minimum is met
+				MBfree = self.ServerList[i].Df()/1024
+				if MBfree < float(self.minFreeMB):
+					print "WARNING: %s space low, removing: %f MB < %d MB" % (self.ServerList[i].get_host(), MBfree, self.minFreeMB)
+					self.ServerList[self.ServerList[i]].Band = -4
+					continue
+				
+				# ## give proper SSH credentials so others can login properly ##
+				# p = subprocess.Popen(['ssh', '-T', '-q', self.ServerList[i].get_user() + '@' + self.ServerList[i].get_host(), 'test -f %s' % pipes.quote("/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPrivateKeyFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+				# p.wait()
+				# # if private key file does not exist on server:
+				# if p.returncode != 0:
+					# print " # Thread uploading SSH key to host", self.ServerList[i].get_host()
+					# self.ServerList[i].SendFile("/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPrivateKeyFile, self.SSHPrivateKeyFile)
+					# self.ServerList[i].SendFile("/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPublicKeyFile, self.SSHPublicKeyFile)
+					# # append to 'authorized_keys'
+					# p = subprocess.Popen(['ssh', '-T', '-q', self.ServerList[i].get_user() + '@' + self.ServerList[i].get_host(), "cat "+"/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPublicKeyFile+" >>/home/"+self.ServerList[i].get_user()+"/.ssh/authorized_keys"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+					# p.wait()
+					# # fix permissions
+					# p = subprocess.Popen(['ssh', '-T', '-q', self.ServerList[i].get_user() + '@' + self.ServerList[i].get_host(), "chmod 700 " + "/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPrivateKeyFile], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+					# p.wait()
+				
+				
+				## establish ongoing SSH connection ##
+				conn = paramiko.SSHClient()
+				conn.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+				try:
+					conn.connect(self.ServerList[i].get_host(), username=self.ServerList[i].get_user())
+				except (paramiko.SSHException, socket.error) as se:
+					print " # Thread error establishing Paramiko SSH to", self.ServerList[i].get_host()
+					continue
+					
+				# copy connection to persistent obj
+				self.ServerSSHCons[i] = conn
+				
+				
+		
+		
 	# Get/Set the options file
 	# return:
 	#	self.OptionsF	if file argument is not supplied, otherwise:
@@ -202,15 +244,6 @@ class Cold:
 
 		return False
 
-	# Set the Map Regex for argument --find-file
-	# Returns:
-	#	void
-	# Completeness: 80%
-	def SetFindFileMapRegex(self, regex):
-		if regex is not None and len(str(regex)) > 0:
-			if self.DebugOutput == True:
-				print "Setting FindFileMapRegex: " + str(regex)
-			self.FindFileMapRegex = str(regex)
 
 	# 1) Read user-defined options from file using global regexs,
 	# 2) Populate global vars with file contents
@@ -237,18 +270,6 @@ class Cold:
 					if self.VerboseOutput == False:
 						print "verbose output on"
 						self.VerboseOutput = True
-				continue
-
-			# Repository Path
-			r = re.match(r'^[ \t]*repository_path[ \t]*=[ \t]*(.*)$', j)
-			if r is not None:
-
-				# todo repository path integrity checks here
-				#  (or conglomorate environment sanity check after loading file)
-
-				self.RepositoryPath = r.group(1)
-				if self.DebugOutput == True:
-					print "setting repository path: %s" % self.RepositoryPath
 				continue
 
 			# Cache path
@@ -284,24 +305,7 @@ class Cold:
 					print "setting log file: %s" % self.LogF
 				continue
 
-			# Map path
-			r = re.match(r'^[ \t]*map[-]?path[ \t]*=[ \t]*(.*)$', j)
-			if r is not None:
-
-				# todo integrity checks here
-				#  (or conglomorate environment sanity check after loading file)
-				#remove trailing '/' from path if it exists:
-				self.MapPath = r.group(1)
-				if self.MapPath[-1] == "/":
-
-					print "deleting self.MapPath[-1:]"
-					del self.MapPath[-1:]
-
-				if self.DebugOutput == True:
-					print "setting map path: %s" % self.MapPath
-				continue
-
-			# Map creation piece size
+			# piece size
 			r = re.match(r'^[ \t]*piece[-]?size[ \t]*=[ \t]*(.*)$', j)
 			if r is not None:
 				if r.group(1).lower() != "":
@@ -312,34 +316,6 @@ class Cold:
 
 				continue
 
-			## Redundancy is now inferred from 'layout.txt' and is set elsewhere ##
-			
-			# # Redundancy
-			# r = re.match(r'^[ \t]*redundancy[ \t]*=[ \t]*(.*)$', j)
-			# if r is not None:
-				# if r.group(1).lower() != "":
-					# #todo integrity checks here
-					# self.Redundancy = int(r.group(1))
-					# if self.DebugOutput == True:
-						# print "setting redundancy: " + str(self.Redundancy)
-
-				# continue
-
-			# Redundancy Ordering
-			r = re.match(r'^[ \t]*redundancy[-]?ordering[ \t]*=[ \t]*(.*)$', j)
-			if r is not None:
-				if r.group(1).lower() != "":
-					# todo more integrity checks here
-					if r.group(1) == "random":
-						self.RedundancyOrdering = "random"
-						if self.DebugOutput == True:
-							print "setting redundancy ordering: " + self.RedundancyOrdering
-					elif r.group(1) == "usage-proportional":
-						self.RedundancyOrdering = "usage-proportional"
-						if self.DebugOutput == True:
-							print "setting redundancy ordering: " + self.RedundancyOrdering
-
-				continue
 
 			# Minimum Server Free Space in MB
 			r = re.match(r'^[ \t]*server[-]?free[-]?minimum[-]?mb[ \t]*=[ \t]*(.*)$', j)
@@ -352,18 +328,6 @@ class Cold:
 
 				continue
 
-			# Preserve Empty Folders
-			r = re.match(r'^[ \t]*preserve-empty-folders[ \t]*=[ \t]*(.*)$', j)
-			if r is not None:
-				if r.group(1).lower() == "True":
-					self.PreserveEmptyFolders = True
-					if self.VerboseOutput == True:
-						print "preserving empty folders"
-				elif r.group(1).lower() == "False":
-					self.PreserveEmptyFolders = False
-					if self.VerboseOutput == True:
-						print "not preserving empty folders"
-				continue
 			# set more option variables here
 			
 		
@@ -373,9 +337,7 @@ class Cold:
 		for j in OptionLines:
 			r = re.match(r'^[ \t]*[^#](.*)$', j)
 			if r is not None:
-			
-				
-			
+
 				# todo integrity checks here
 				#  (or conglomorate environment sanity check after loading file)
 
@@ -391,7 +353,7 @@ class Cold:
 					print "ERROR: path in: " + j
 					sys.exit()
 					
-				#print "Attempting to add server! %s %s %s %s %s %s" % (r[0], r[1], r[2], r[3], r[4], r[5])
+				print "Attempting to add server! %s %s %s %s %s %s" % (r[0], r[1], r[2], r[3], r[4], r[5])
 
 				rs = RepositoryServer()
 				rs.set_user(r[0])
@@ -407,25 +369,44 @@ class Cold:
 					rs.HashSpaceLowerBound = int(r[4], 16)
 				if len(r[5]) > 0:
 					rs.HashSpaceUpperBound = int(r[5], 16)
-
-				# Verify passwordless access to the server
-				if HasPasswordlessSSH(rs.get_host(), rs.get_user()):
-	#				print "SSH is passwordless!"
-					MuteSSHLogin(rs.get_host(), rs.get_user())
-				else:
-					print "Fatal Error: password required for SSH to %s@%s" % (rs.get_user(), rs.get_host())
-				
-				# Check free space in MB, only add server if minimum is met
-				MBfree = rs.Df()/1024
-				if MBfree < float(self.ServerFreeMinMB):
-					print "WARNING: %s space low, not adding: %f MB < %d MB" % (rs.get_host(), MBfree, self.ServerFreeMinMB)
-					continue
 					
 				self.ServerList.append(rs)
+				self.ServerSSHCons.append(-1)
+
 				
-				if self.DebugOutput == True:
-					rs.print_info()
-				continue
+		# spawn threads
+		print " ## LoadOptions threads starting!"
+		activeThreads = []
+		for t in range(0, 10):
+			n = self.AddServerThread(t, 10, self.ServerList, self.ServerFreeMinMB, self.ServerSSHCons, self.SSHPublicKeyFile, self.SSHPrivateKeyFile)
+			activeThreads.append(n)
+		
+		# start threads
+		for t in range(0, 10):
+			activeThreads[t].start()
+			
+		# wait for threads to finish
+		for t in range(0, 10):
+			activeThreads[t].join()
+			
+		print " ## LoadOptions threads done!"
+		
+		print " ## LoadOptions SSH Connections:", self.ServerSSHCons
+				
+				
+		# iterate over servers, deleting unavailable ones
+		removeIndices = []
+		for s in self.ServerList:
+			if s.Band < 0:
+				removeIndices.append(0, self.ServerList.index(s))
+
+			elif self.DebugOutput == True:
+				s.print_info()
+			continue
+			
+		for i in removeIndices:
+			print " ## Removing host", self.ServerList[i].get_host()
+			del self.ServerList[i]
 
 #	LoadOptions = Callable(LoadOptions)
 
@@ -540,15 +521,16 @@ class Cold:
 		if growOnly == False:
 		
 			# If can't connect, set hash info to -3 and ignore
-			upServers = []
-			for s in self.ServerList:
-				if not IsHostAlive(s.get_host()):
-					print "ConsolidateLayout(): host down: %s" % (s.get_host())
-					s.Band = -3
-					s.HashSpaceLowerBound = -3
-					s.HashSpaceUpperBound = -3
-				else:
-					upServers.append(s)
+			#upServers = []
+			upServers = self.ServerList
+			# for s in self.ServerList:
+				# if not IsHostAlive(s.get_host()):
+					# print "ConsolidateLayout(): host down: %s" % (s.get_host())
+					# s.Band = -3
+					# s.HashSpaceLowerBound = -3
+					# s.HashSpaceUpperBound = -3
+				# else:
+					# upServers.append(s)
 					
 			# Check up servers for minimum free space, otherwise set hash info
 			#	to -2 and ignore
@@ -699,8 +681,6 @@ class Cold:
 						else:
 							print "RepopulateBetweenBands(newLayoutLists, 1, %d)" % i
 							self.RepopulateBetweenBands(newLayoutLists, 1, i)
-				
-			
 			
 			
 		# if we are merely appending new servers to existing layout
@@ -712,13 +692,13 @@ class Cold:
 					newServer = s
 					break
 			
-			# If can't connect, set hash info to -3 and ignore
-			if not IsHostAlive(newServer.get_host()):
-				print "ConsolidateLayout(): host down: %s" % (newServer.get_host())
-				newServer.Band = -3
-				newServer.HashSpaceLowerBound = -3
-				newServer.HashSpaceUpperBound = -3
-				return 1
+			# # If can't connect, set hash info to -3 and ignore
+			# if not IsHostAlive(newServer.get_host()):
+				# print "ConsolidateLayout(): host down: %s" % (newServer.get_host())
+				# newServer.Band = -3
+				# newServer.HashSpaceLowerBound = -3
+				# newServer.HashSpaceUpperBound = -3
+				# return 1
 			
 			# Check up servers for minimum free space, otherwise set hash info
 			#	to -2 and ignore
@@ -765,15 +745,17 @@ class Cold:
 			self.RecalculateBounds()
 
 			
-		## write new layout to file
-		self.WriteLayout(newLayoutLists)
+		
 			
 		## remove lock file
-			
+		
+		
+		## write new layout to file
+		self.WriteLayout()
 			
 			
 	# PURPOSE: write over previous layout file with new.
-	def WriteLayout(self, newLayoutLists):
+	def WriteLayout(self):
 	
 		# remove 'layout.txt'
 		os.remove("layout.txt")
@@ -917,42 +899,31 @@ class Cold:
 			# print "hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, hashLowerBound, hashUpperBound)
 			
 			# hashLowerBound = hashUpperBound + 1
+			
+		if len(FreeSpace) > 0:
+			print "available space in KB:"
+			for i in FreeSpace:
+				print i
+		if len(err) > 0:
+			for e in err:
+				print "df server error: " + e
 
 		return FreeSpace, ErrorServers
 
 
-		
-	# List the files contained in all the maps in the maps folder
-	# Returns:
-	#	list of file names (strings)
-	def ListFiles(self):
-		# return variable
-		filelist = []
-		
-		## NOT IMPLEMENTED ##
-
-		# # list all maps
-		# maps = self.ListMaps()
-
-		# # append files from each map to return variable
-		# for m in maps:
-			# filelist.extend(self.ListMapFiles(m))
-
-		return filelist
 
 
 	# Create the map and cache files for the supplied path,
 	# returns a list of paths to the pieces
 	def CreatePieces(self, path):
+		if self.DebugOutput == True:
+			print ' ## CreatePieces', path
 
 		# return value
 		piecelist = []
 
 		# remove trailing slash(es)
 		path = path.rstrip("/")
-
-		if self.DebugOutput == True:
-			print " ## Cold.CreatePieces(): " + path
 
 		# Check if it's a file
 		if os.path.isfile(path):
@@ -985,142 +956,6 @@ class Cold:
 			source.close()
 
 		return piecelist
-
-
-
-
-	# Purpose:  given a server list and a piece name, return a list of all the servers
-	# 			in the list (a subset) for which that piece is a file
-	#
-	# Called by SendToCloud(path)
-	# Called indirectly by -s [--send] flag
-	# returns:
-	#	RepositoryServer[]	list of server objects that have the piece available
-	def LookupPiece(self, piecename, serverlist=[]):
-		result_server_list = []
-
-		# if empty optional serverlist, default to self.ServerList:
-		if len(serverlist) == 0:
-			serverlist = self.ServerList
-
-		print "(LookupPiece!)"
-		
-		for s in serverlist:
-			print "(LookupPiece) IsFile %s: %s" % (s.get_host(), piecename)
-			if s.IsFile(piecename) == True:
-				result_server_list.append(s)
-				
-
-		return result_server_list
-#	LookupPiece = Callable(LookupPiece)
-
-
-	# Purpose:  given a server list and a filename path, return a file result structure
-	#			of all the servers in the list (a subset) for which that path is a file
-	#
-	# returns:
-	#	(servers, downpieces)	tuple: first is list of servers available using
-	#			redundancy prefs needed to get all pieces, default random. second is
-	#			list of pieces that are unavailable
-
-	def LookupFile(self, serverlist, mappath, filename=''):
-
-		# todo make a bunch of threads to call a remote ls on all the servers,
-		#  then concatenate the results
-		# but for now we'll make do with a serial algorithm
-
-		#res = LookupResultStruct()
-		uppieces = list()
-		downpieces = list()
-
-		# assert existence
-		if (os.path.isfile(self.MapPath + "/" + mappath) == False) and (os.path.isfile(self.MapPath + "/" + mappath + ".map") == False):
-			print "ERROR: LookupFile() map file not found: " + mappath
-			errorfiles.append(mappath)
-			return errorfiles
-
-		# if we must append a ".map" to the filename, do so:
-		if (os.path.isfile(self.MapPath + "/" + mappath) == False) and (os.path.isfile(self.MapPath + "/" + mappath + ".map") == True):
-			if self.DebugOutput == True:
-				print "appending .map to filename"
-			mappath = mappath + ".map"
-
-		# read entire map file into memory
-		mapfile = file(self.MapPath + "/" + mappath, "r")
-		maplines = mapfile.readlines()
-		mapfile.close()
-
-		# working file information
-		currentfilename = ""
-		# list of piece names, which are all MD5s
-		pieces = []
-		# list of lists.  outer list corresponds to each piece in pieces[],
-		#  inner list is of hosting servers
-		availabilitylist = []
-		# 'unavailable' flag is set in the lookup loop below if a piece has been
-		#  identified as missing, so the rest of the file is ignored
-		unavailable = False
-
-		# strip maplines[] strings of extra whitespace
-		i=0
-		while i < len(maplines):
-			maplines[i] = maplines[i].strip()
-			i=i+1
-
-		# iterate through map file lines
-		i=0
-		while i < len(maplines):
-			#debug
-			print "processing line: " + maplines[i]
-
-			# if the line is a name:
-			if len(maplines[i]) > 1 and IsValidSHA1(maplines[i]) == False:
-
-				#debug
-				print "name line: " + maplines[i]
-
-				# save the current file state to res:
-				if len(currentfilename) > 0:
-					res.filecount = res.filecount+1
-
-
-				# if filename is not empty, verify it matches:
-				if (len(filename) == 0) or (maplines[i] == filename):
-					# set the current file state
-					print "looking up next file: " + maplines[i]
-					currentfilename = maplines[i]
-					pieces = []
-					availability = []
-					unavailable = False
-
-				i=i+1
-				continue
-
-			# if the line is a SHA-1:
-			elif len(maplines[i]) > 0 and IsValidSHA1(maplines[i]) == True:
-				pieces.append(maplines[i])
-				#debug
-				print "looking up piece: " + maplines[i]
-
-				# get piece availability
-				#servers = self.LookupPiece(maplines[i], s)
-				servers = self.LookupPiece(maplines[i], self.ServerList)
-
-				# if not available:
-				if len(servers) < 1:
-					# print 'piece unavailable' message
-					print "ERROR: piece %s unavailable for file %s; skipping" % (maplines[i], currentfilename)
-					unavailable = True
-				# if available:
-				else:
-					# append servers (a list) to availabilitylist
-					availabilitylist.append(servers);
-
-
-		return res
-	#	LookupFile = Callable(LookupFile)
-
-
 
 
 
@@ -1182,148 +1017,119 @@ class Cold:
 
 
 		# return (available, unavailable)
-
-
-	# Purpose:
-	#	Send 'path' to the cloud by chopping into pieces, creating a db entry,
-	#	and distributing pieces
-	# Called by -s [--send] flag
-	def SendToCloud(self, localPath, dbPath):
-		print " ## SendToCloud", localPath, dbPath
 		
-		# if directory:
-		if os.path.isdir(localPath):
+	
+
+	# # ARGUMENTS:
+	# #	filenameregex:	regex applied to all files in available maps,
+	# #					matching files are returned
+	# #	mapregex:		Optional,
+	# #					only iterate through the map files that match the regex, if given
+	# # PURPOSE:
+	# #	given a filename and optionally a list of maps,
+	# #	return the names of files that contain the filename
+	# def FindFile(self, filenameregex='[a-zA-Z0-9/\-._]*', mapregex=''):
+		# # return variable
+		# # list of matching file names
+		# matches = []
+
+		# # list of map files in mappath that match the regex for iterating through
+		# mapmatches = []
+
+		# # list all maps
+		# out = os.listdir(self.MapPath)
+
+		# # remove the .map extensions
+		# i=0
+		# while i < len(out):
+			# if out[i][len(out[i])-4:] == ".map":
+				# out[i] = str(out[i][:len(out[i])-4])
+			# i=i+1
+
+		# # get the maps matching the parameter regex, if given:
+		# # (equivalent to `ls $mappath | grep $mapregex` in bash)
+		# if len(mapregex) > 0:
+			# if self.DebugOutput == True:
+				# print "applying parameter map regex: " + mapregex
+
+			# # if the regex doesn't match ".map", remove the ".map" extension
+			# #	from the filenames before parsing
+# # 			if re.match(mapregex, ".map") is None or mapregex[len(mapregex)-4:] != ".map":
+# # 				#debug
+# # 				print "removing extensions."
+# # 				# remove the .map extensions
+# # 				i=0
+# # 				while i < len(out):
+# # 					if out[i][len(out[i])-4:] == ".map":
+# # 						out[i] = str(out[i][:len(out[i])-4])
+# # 					i=i+1
+
+			# for o in out:
+				# r = re.match(mapregex, o)
+				# if r is not None:
+					# mapmatches.append(o)
+
+		# # else don't use a regex
+		# else:
+			# mapmatches = out
+
+		# print "regex matched maps: ",
+		# for m in mapmatches:
+			# print m
+
+
+		# # iterate through each matching map:
+		# for m in mapmatches:
+			# #debug
+			# print "processing map: " + m
+
+			# # read map lines into memory
+			# # add the .map extension that was removed for regex scanning if needed
+			# if m[len(m)-4:] == ".map":
+				# mfile = file(self.MapPath + "/" + m, "r")
+			# else:
+				# mfile = file(self.MapPath + "/" + m + ".map", "r")
+			# maplines = mfile.readlines()
+			# mfile.close()
+
+			# # strip maplines[] strings of extra whitespace
+			# i=0
+			# while i < len(maplines):
+				# maplines[i] = maplines[i].strip()
+				# i=i+1
+
+			# # iterate over lines and try to match regex
+			# for l in maplines:
+
+				# # if the line is a name:
+				# if len(l) > 1 and IsValidSHA1(l) == False:
+
+					# #debug
+					# print "file: " + l
+
+					# # apply file name regex
+					# r = re.match(filenameregex, l)
+
+					# # if match:
+					# if r is not None:
+						# #debug
+						# print "matched file: " + l
+
+						# # append to return var
+						# matches.append(m + ":" + l)
+
+		# return matches
+
 		
-			dirName = os.path.normpath(localPath).split('/')[-1]
-			#dirName = os.path.basename(localPath)
-			
-			# get directory contents
-			dirContents = os.listdir(localPath)
-			
-			for f in dirContents:
-				if f == "." or f == "..":
-					continue
-					
-				# Make subdir in db
-				self.SQLDataSource.mkdirs(dbPath + "/" + dirName)
-				
-				# Recurse to subfiles
-				self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName + "/" + f)
-				
-			return
-			
-		# if regular file:
-		elif os.path.isfile(localPath):
 		
-			fileName = os.path.normpath(localPath).split('/')[-1]
-			pathName = os.path.dirname(os.path.normpath(localPath))
-		
-			PieceList = self.CreatePieces(localPath)
-			
-			for p in PieceList:
-				p = p.strip()
-					
-			# Write DB entries for file & pieces
-			self.SQLDataSource.createFile(pathName + "/" + fileName, PieceList)
+	# List the files contained in all the maps in the maps folder
+	# Returns:
+	#	list of file names (strings)
+	def ListFiles(self, rootDir='/'):
 
-			if self.DebugOutput == True:
-				print "SendToCloud() PieceList: "
-				for p in PieceList:
-					print "  " + p
-
-			if self.RedundancyOrdering == "usage-proportional":
-				for p in PieceList:
-					for s in self.ServerList:
-						#print "%s bounds: [%x, %x]" % (s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
-						if s.HashSpaceLowerBound <= int(p,16) and int(p,16) <= s.HashSpaceUpperBound:
-							# copy piece to 's'
-							print "Uploading %x to %s [%x, %x]" % (int(p,16), s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
-							
-							self.WaitingSendJobs.append([self.ServerList.index(s), s.get_path() + "/" + p, self.CachePath.strip() + "/" + p])
-							#s.SendFile(s.get_path() + "/" + p, self.CachePath.strip() + "/" + p)
-							
-							#if self.DebugOutput == True:
-								#print "Invalidating DfCache: " + s.get_host()
-							s.DfCacheIsCurrent = False
+		return self.SQLDataSource.ls(rootDir)
 		
 		
-		# spawn threads
-		print " ## SendToCloud threads starting!"
-		activeThreads = []
-		for t in range(0, self.MaxTransferThreads):
-			n = self.TransferThread(t, self.MaxTransferThreads, self.WaitingSendJobs, [], self.ServerList)
-			activeThreads.append(n)
-		
-		# start threads
-		for t in range(0, self.MaxTransferThreads):
-			activeThreads[t].start()
-			
-		# wait for threads to finish
-		for t in range(0, self.MaxTransferThreads):
-			activeThreads[t].join()
-			
-		print " ## SendToCloud threads done!"
-		self.WaitingSendJobs = []
-		
-		return
-				
-		
-		
-		# if self.RedundancyOrdering == "random":
-			# for p in PieceList:
-				# LocalServerList = []
-
-				# for s in self.ServerList:
-					# LocalServerList.append(s)
-
-				# # query all servers and count existing piece copies
-				# ExistingCopies = self.LookupPiece(p, LocalServerList)
-	# #			print "ExistingCopies [SFTC]: "
-	# #			for c in ExistingCopies:
-	# #				print c.get_host().strip()
-				# ExistingCount = len(ExistingCopies)
-
-				# # for each server that already has a copy:
-				# #	remove that server from LocalServerList (so we don't try to send another copy to it)
-				# for e in ExistingCopies:
-					# for l in LocalServerList:
-						# if l.get_host() != e.get_host() or l.get_user() != e.get_user() or l.get_path() != e.get_path():
-							# continue
-						# else:
-							# LocalServerList.remove(e)
-
-				# # copy each piece to as many servers as specified as minimum redundancy minus the number that already exist
-	# #			DestinationServers = GetNRedundancyServers(ServerList, RedundancyOrdering, MinimumRedundancy-ExistingCount)
-
-				# # shuffle the server list
-				# random.shuffle(LocalServerList)
-
-				# # send the current piece to (MinimumRedundancy-ExistingCount) servers,
-				# # but don't pick more servers than we have available
-				# if (self.MinimumRedundancy - ExistingCount) > 0:
-					# for i in range(min(self.MinimumRedundancy - ExistingCount, len(LocalServerList))):
-						# # Verify free space requirement before actually sending
-						# if LocalServerList[0].Df()/1024 < float(self.ServerFreeMinMB):
-							# print "WARNING: insufficient space: %s, %f < %d" % (LocalServerList[0].get_host(), LocalServerList[0].Df()/1024, float(self.ServerFreeMinMB))
-						# if self.DebugOutput == True:
-							# print "sending %s to %s\n" % (p.strip(), LocalServerList[0].get_host().strip())
-					# # top priority todo: replace this function with a repositoryserver call that handles df
-			# #			SendFileToServer(LocalServerList[0].get_host(), LocalServerList[0].get_user(), LocalServerList[0].get_path() + "/" + p, self.CachePath.strip() + "/" + p)
-						# LocalServerList[0].SendFile(LocalServerList[0].get_path() + "/" + p, self.CachePath.strip() + "/" + p)
-
-						# # Iterate through the live server list and unset its DfCache, since we're changing the free space
-						# i = 0
-						# for s in self.ServerList:
-							# if s == LocalServerList[0]:
-								# if self.ServerList[i].DfCacheIsCurrent == True:
-									# if self.DebugOutput == True:
-										# print "Invalidating DfCache: " + self.ServerList[i].get_host()
-									# self.ServerList[i].DfCacheIsCurrent = False
-								# break
-							# i += 1
-
-						# LocalServerList.pop(0)
-
 
 	# PURPOSE:
 	# Collect pieces listed in <mappath> and reassemble them into <destPath>
@@ -1352,19 +1158,19 @@ class Cold:
 				print "ERROR: ReceiveFromCloud() destination path not found: " + destPath
 				errorfiles.append(destPath)
 				return errorfiles
-		# if destPath is not supplied, default to the class's Outpath
-		else:
-			# if the class option exists, use it:
-			if len(self.Outpath) > 0:
-				destPath = self.Outpath
-				print "destPath := " + self.Outpath
-				if not os.path.exists(self.Outpath):
-					os.makedirs(self.Outpath)
-			# otherwise, return an error
-			else:
-				print "ERROR: ReceiveFromCloud() destination path not found: " + self.Outpath
-				errorfiles.append(self.Outpath)
-				return errorfiles
+		# # if destPath is not supplied, default to the class's Outpath
+		# else:
+			# # if the class option exists, use it:
+			# if len(self.Outpath) > 0:
+				# destPath = self.Outpath
+				# print "destPath := " + self.Outpath
+				# if not os.path.exists(self.Outpath):
+					# os.makedirs(self.Outpath)
+			# # otherwise, return an error
+			# else:
+				# print "ERROR: ReceiveFromCloud() destination path not found: " + self.Outpath
+				# errorfiles.append(self.Outpath)
+				# return errorfiles
 
 		#debug
 		print " ## ReceiveFromCloud Destination path:", destPath
@@ -1500,125 +1306,111 @@ class Cold:
 						
 		return errorfiles
 
+		
+	# Purpose:
+	#	Send 'path' to the cloud by chopping into pieces, creating a db entry,
+	#	and distributing pieces
+	# Called by -s [--send] flag
+	def SendToCloud(self, localPath, dbPath):
+		print ' ## SendToCloud', localPath, dbPath
+		
+		# if directory:
+		if os.path.isdir(localPath):
+		
+			dirName = os.path.normpath(localPath).split('/')[-1]
+			#dirName = os.path.basename(localPath)
+			
+			# get directory contents
+			dirContents = os.listdir(localPath)
+			
+			for f in dirContents:
+				if f == "." or f == "..":
+					continue
+					
+				# Make subdir in db
+				self.SQLDataSource.mkdirs(dbPath + "/" + dirName)
+				
+				(targetId, targetType) = self.SQLDataSource.getId(dbPath + "/" + dirName + "/" + f)
+				# if already exists, warn and skip!
+				if targetType > -1:
+					print " ## SendToCloud WARNING: file exists, skipping:", localPath, dbPath
+					continue
+				
+				## Recurse to subfiles
+				# if directory, move into subdir:
+				if os.path.isdir(localPath + "/" + f):
+					self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName + "/" + f)
+				# else if file, stay in same dir:
+				elif os.path.isfile(localPath + "/" + f):
+					self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName)
+				
+				#self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName + "/" + f)
+				
+			return
+			
+		# if regular file:
+		elif os.path.isfile(localPath):
+		
+			fileName = os.path.normpath(localPath).split('/')[-1]
+			pathName = os.path.dirname(os.path.normpath(localPath))
+			localPathDirName = os.path.normpath(pathName).split('/')[-1] 
+			dbPathDirName = os.path.normpath(dbPath).split('/')[-1] 
+			
+			if pathName == '':
+				pathName = '/'
+		
+			PieceList = self.CreatePieces(localPath)
+			
+			for p in PieceList:
+				p = p.strip()
 
-	# FindFile:
-	# ARGUMENTS:
-	#	filenameregex:	regex applied to all files in available maps,
-	#					matching files are returned
-	#	mapregex:		Optional,
-	#					only iterate through the map files that match the regex, if given
-	# PURPOSE:
-	#	given a filename and optionally a list of maps,
-	#	return the names of files that contain the filename
-	def FindFile(self, filenameregex='[a-zA-Z0-9/\-._]*', mapregex=''):
-		# return variable
-		# list of matching file names
-		matches = []
 
-		# list of map files in mappath that match the regex for iterating through
-		mapmatches = []
+			## Write DB entries for file & pieces
+			print " ## SendToCloud dbPath:", dbPath
+			print " ## SendToCloud pathName:", pathName
+			print " ## SendToCloud fileName:", fileName
+			
+			self.SQLDataSource.mkdirs(dbPath)
+			self.SQLDataSource.createFile(dbPath+'/'+fileName, PieceList)
 
-		# list all maps
-		out = os.listdir(self.MapPath)
-
-		# remove the .map extensions
-		i=0
-		while i < len(out):
-			if out[i][len(out[i])-4:] == ".map":
-				out[i] = str(out[i][:len(out[i])-4])
-			i=i+1
-
-		# get the maps matching the parameter regex, if given:
-		# (equivalent to `ls $mappath | grep $mapregex` in bash)
-		if len(mapregex) > 0:
 			if self.DebugOutput == True:
-				print "applying parameter map regex: " + mapregex
+				print "SendToCloud() PieceList: "
+				for p in PieceList:
+					print "  " + p
 
-			# if the regex doesn't match ".map", remove the ".map" extension
-			#	from the filenames before parsing
-# 			if re.match(mapregex, ".map") is None or mapregex[len(mapregex)-4:] != ".map":
-# 				#debug
-# 				print "removing extensions."
-# 				# remove the .map extensions
-# 				i=0
-# 				while i < len(out):
-# 					if out[i][len(out[i])-4:] == ".map":
-# 						out[i] = str(out[i][:len(out[i])-4])
-# 					i=i+1
+			if self.RedundancyOrdering == "usage-proportional":
+				for p in PieceList:
+					for s in self.ServerList:
+						#print "%s bounds: [%x, %x]" % (s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
+						if s.HashSpaceLowerBound <= int(p,16) and int(p,16) <= s.HashSpaceUpperBound:
+							# copy piece to 's'
+							print "Uploading %x to %s [%x, %x]" % (int(p,16), s.get_host(), s.HashSpaceLowerBound, s.HashSpaceUpperBound)
+							
+							self.WaitingSendJobs.append([self.ServerList.index(s), s.get_path() + "/" + p, self.CachePath.strip() + "/" + p])
+							#s.SendFile(s.get_path() + "/" + p, self.CachePath.strip() + "/" + p)
+							
+							#if self.DebugOutput == True:
+								#print "Invalidating DfCache: " + s.get_host()
+							s.DfCacheIsCurrent = False
+		
+		
+		# spawn threads
+		print " ## SendToCloud threads starting!"
+		activeThreads = []
+		for t in range(0, self.MaxTransferThreads):
+			n = self.TransferThread(t, self.MaxTransferThreads, self.WaitingSendJobs, [], self.ServerList)
+			activeThreads.append(n)
+		
+		# start threads
+		for t in range(0, self.MaxTransferThreads):
+			activeThreads[t].start()
+			
+		# wait for threads to finish
+		for t in range(0, self.MaxTransferThreads):
+			activeThreads[t].join()
+			
+		print " ## SendToCloud threads done!"
+		self.WaitingSendJobs = []
+		
+		return
 
-			for o in out:
-				r = re.match(mapregex, o)
-				if r is not None:
-					mapmatches.append(o)
-
-		# else use the class's stored regex set by argument --map-regex
-		elif len(self.FindFileMapRegex) > 0:
-			if self.DebugOutput == True:
-				print "applying map regex: " + self.FindFileMapRegex
-
-			# if the regex doesn't match ".map", remove the ".map" extension
-			#	from the filenames before parsing
-			if re.match(self.FindFileMapRegex, ".map") is None or self.FindFileMapRegex[len(self.FindFileMapRegex)-4:] != ".map":
-				#debug
-#				print "removing extensions."
-				# remove the .map extensions
-# 				i=0
-# 				while i < len(out):
-# 					if out[i][len(out[i])-4:] == ".map":
-# 						out[i] = str(out[i][:len(out[i])-4])
-# 					i=i+1
-
-				for o in out:
-					r = re.match(self.FindFileMapRegex, o)
-					if r is not None:
-						mapmatches.append(o)
-		# else don't use a regex
-		else:
-			mapmatches = out
-
-		print "regex matched maps: ",
-		for m in mapmatches:
-			print m
-
-
-		# iterate through each matching map:
-		for m in mapmatches:
-			#debug
-			print "processing map: " + m
-
-			# read map lines into memory
-			# add the .map extension that was removed for regex scanning if needed
-			if m[len(m)-4:] == ".map":
-				mfile = file(self.MapPath + "/" + m, "r")
-			else:
-				mfile = file(self.MapPath + "/" + m + ".map", "r")
-			maplines = mfile.readlines()
-			mfile.close()
-
-			# strip maplines[] strings of extra whitespace
-			i=0
-			while i < len(maplines):
-				maplines[i] = maplines[i].strip()
-				i=i+1
-
-			# iterate over lines and try to match regex
-			for l in maplines:
-
-				# if the line is a name:
-				if len(l) > 1 and IsValidSHA1(l) == False:
-
-					#debug
-					print "file: " + l
-
-					# apply file name regex
-					r = re.match(filenameregex, l)
-
-					# if match:
-					if r is not None:
-						#debug
-						print "matched file: " + l
-
-						# append to return var
-						matches.append(m + ":" + l)
-
-		return matches

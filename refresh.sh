@@ -22,6 +22,7 @@ fi
 
 rm -f ccfroutines.py*
 rm -f ccold.py*
+rm -f coldd.py*
 rm -f cglobals.py*
 rm -f cold.py*
 rm -f crepositoryserver.py*
@@ -38,11 +39,14 @@ rm -f layout-1.txt*
 rm -f layout-2.txt*
 rm -f cold.db*
 rm -f output.txt* 2>/dev/null
+rm -f ConsistencyChecker.sh*
+rm -f id_rsa_cold*
 
 sudo rm /tmp/.cold* /tmp/filter-sha1* /tmp/rm-pieces* /tmp/mv-pieces* 2>/dev/null
 
 wget -q http://192.168.0.106:8080/repo/ccfroutines.py
 wget -q http://192.168.0.106:8080/repo/ccold.py
+wget -q http://192.168.0.106:8080/repo/coldd.py
 wget -q http://192.168.0.106:8080/repo/cglobals.py
 wget -q http://192.168.0.106:8080/repo/cold.py
 wget -q http://192.168.0.106:8080/repo/crepositoryserver.py
@@ -58,5 +62,9 @@ wget -q http://192.168.0.106:8080/repo/layout.txt
 wget -q http://192.168.0.106:8080/repo/layout-1.txt
 wget -q http://192.168.0.106:8080/repo/layout-2.txt
 wget -q http://192.168.0.106:8080/repo/cold.db
+wget -q http://192.168.0.106:8080/repo/ConsistencyChecker.sh
+wget -q http://192.168.0.106:8080/repo/id_rsa_cold
+wget -q http://192.168.0.106:8080/repo/id_rsa_cold.pub
+
 
 chmod 755 *.sh 2>/dev/null

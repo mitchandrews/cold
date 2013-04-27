@@ -1,3 +1,5 @@
+#!/usr/bin/python
+#
 # Mitch Andrews
 
 # dependencies:
@@ -76,16 +78,25 @@ class SQLiteDataSource:
 		
 		
 	def createFile(self, path, pieceList=[]):
-		print " ## SQLiteDataSource.createFile", path, len(pieceList)
+		print ' ## SQLiteDataSource createFile', path, len(pieceList)
 		
 		(dirname, fname) = os.path.split(os.path.normpath(path))
+		
+		# dirList = os.path.normpath(path).split('/')
+		# dirList = filter(None, dirList)
+		# fname = dirList.pop()
+		# dirname = '/'
+		# for d in dirList:
+			# dirname = dirname + d + '/'
+		
+		print ' ## SQLiteDataSource createFile (fname, dirname) :=', fname, '::', dirname
 		
 		# Always create all required subdirectories automatically
 		dirId = self.mkdirs(dirname)
 		
-		# Check if it already exists
+		# Check if it already exists and is a file
 		(id, type) = self.getId(path)
-		if id > -1:
+		if type == 0 and id > -1:
 		
 			# If so, remove
 			self.remove(path)
@@ -115,7 +126,7 @@ class SQLiteDataSource:
 	
 	# RETURNS: tuple: (id, type)	type := <0|1> : 0 -> file, 1 -> dir
 	def getId(self, path):
-		print " ## SQLiteDataSource.getId", path
+		print ' ## SQLiteDataSource getId', path
 		
 		dirList = os.path.normpath(path).split('/')
 		dirList = filter(None, dirList)
@@ -140,10 +151,10 @@ class SQLiteDataSource:
 				objId = t[0]
 				objType = t[1]
 				
-				# if objType == 0:
-					# print "found file!:", pathElem
-				# elif objType == 1:
-					# print "found dir!:", pathElem
+				if objType == 0:
+					print "found file!:", pathElem
+				elif objType == 1:
+					print "found dir!:", pathElem
 				continue
 					
 			# print "not found!:", pathElem
@@ -152,12 +163,13 @@ class SQLiteDataSource:
 		#if len(path) == 0:
 		#	fname = "/"
 			
+		print ' ## SQLiteDataSource getId returning:', objId, objType
 		return (objId, objType)
 
 		
 		
 	def listFilePieces(self, path):
-		print " ## SQLiteDataSource.listFilePieces", path
+		print " ## SQLiteDataSource listFilePieces", path
 		
 		(id, type) = self.getId(path)
 		
@@ -178,11 +190,13 @@ class SQLiteDataSource:
 		
 		
 	def ls(self, path):
-		print " ## SQLiteDataSource.ls", path
+		print " ## SQLiteDataSource ls", path
 		
-		(id, type) = self.getId(os.path.normpath(path))
+		(id, type) = self.getId(path)
 		dirList = os.path.normpath(path).split('/')
 		dirList = filter(None, dirList)
+		
+		print " ## ls (id, type):", id, type
 
 		# if directory, return list of contents
 		if type == 1:
@@ -214,7 +228,7 @@ class SQLiteDataSource:
 		
 	# Make directories recursively to satisfy 'path'
 	def mkdirs(self, path):
-		print " ## SQLiteDataSource.mkdirs", path
+		print " ## SQLiteDataSource mkdirs", path
 		dir_i = 0
 		dirList = os.path.normpath(path).split('/')
 		dirList = filter(None, dirList)
@@ -280,7 +294,7 @@ class SQLiteDataSource:
 	# requires: self.ls(), self.listFilePieces(), self.getId()
 	#
 	def remove(self, path):
-		print " ## SQLiteDataSource.remove", path
+		print " ## SQLiteDataSource remove", path
 		
 		
 		id, type = self.getId(path)
@@ -320,7 +334,7 @@ class SQLiteDataSource:
 		
 		
 	def truncateFile(self, path):
-		print " ## SQLiteDataSource.truncateFile", path
+		print " ## SQLiteDataSource truncateFile", path
 		
 		(id, type) = self.getId(path)
 		

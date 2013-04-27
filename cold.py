@@ -1,3 +1,5 @@
+#!/usr/bin/python
+#
 # Mitch Andrews
 
 import sys
@@ -6,6 +8,7 @@ import subprocess
 import re
 import getopt
 import random
+import socket
 import sqlite3
 import time
 
@@ -14,180 +17,117 @@ from crepositoryserver import *
 #from cglobals import *
 from ccold import *
 
+DebugOutput = False
 
-#--------------------------------------------------------------
-#--- Main -----------------------------------------------------
 
-#output = ShellOutputLines(cmd + " " + path)
+## Assert daemon is running, get info to connect (properly) ##
 
-#print "---------"
-#for i in range(0, len(output)):
-#	print "output[%d]: %s/%s" % (i, path, output[i])
 
-random.seed()
 
-CClient = Cold()
-
-#CClient.SQLDataSource.initDb(CClient.SQLDataSource.dbPath)
-#CClient.SQLDataSource.mkdirs("/test")
-#print "getId '/test': ", CClient.SQLDataSource.getId("/test")
-print "ls '/': ", CClient.SQLDataSource.ls("/")
-
-## TEMPORARY -- remove this after daemonization ##
-dbSendPath = "/"
-dbReceivePath = "./receive"
-
+## Instantiate socket to connect to daemon ##
+sock_buf_size = 1024
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(('localhost', 995))
 
 
 # Getopt complete argument list
-optlist, args = getopt.gnu_getopt(sys.argv[1:], 'a:c:df:hlo:pr:s:t:vw:',
-				['pretend', 'verbose', 'debug', 'help', 'warranty',
-				 'consolidate-layout', 'create-map', 'list-files', 'print-usage', 'show-usage',
+optlist, args = getopt.gnu_getopt(sys.argv[1:], 'a:c:df:hl:o:pqr:s:t:vw:',
+				['exit', 'pretend', 'verbose', 'debug', 'help', 'warranty',
+				 'consolidate-layout', 'print-usage', 'quit', 'show-usage',
 
-				 'add-server=', 'find-file=', 'options-file=',
-				 'outpath=' 'receive=', 'scan-subnet=', 'send-file=', 'send-to-cloud=', 'set-redundancy=', 'update-piece='])
+				 'add-server=', 'find-file=', '--list=', 'list-files=',
+				 'receive=', 'scan-subnet=', 'send-file=', 'send-to-cloud=', 'set-redundancy='])
 
 for i in optlist:
 	flag, val = i
 	if flag == "-d" or flag == "--debug":
-		CClient.DebugOutput = True
-		print "flag: -d"
+		DebugOutput = True
 
 	elif flag == "-v" or flag == "--verbose":
 		CClient.VerboseOutput = True
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: -v"
 
 	elif flag == "-p" or flag == "--pretend":
 		CClient.PretendMode = True
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: -p"
 
 	elif flag == "-h" or flag == "--help":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: -h"
 		#PrintProgramHelp()
 		print "-INSERT PROGRAM HELP HERE-"
+		sock.close()
 		sys.exit()
 
 	elif flag == "--warranty":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: --warranty"
 		#PrintProgramWarranty()
 		print "-INSERT PROGRAM WARRANTY HERE-"
+		sock.close()
 		sys.exit()
 
-	elif flag == "--list-files":
-		if CClient.DebugOutput == True:
-			print "flag: --list-files"
-		files = CClient.ListFiles()
-#		print "Files:",
-		for f in files:
-			print f
-
-		sys.exit()
-
-
-	elif flag == "-f" or flag == "--options-file":
-		if CClient.DebugOutput == True:
-			print "flag: -f %s" % val
-		CClient.SetOptionsFile(val)
-
-	elif flag == "-o" or flag == "--outpath":
-		CClient.SetOutpath(val)
-		if CClient.DebugOutput == True:
-			print "flag: -o %s" % val
-			
-	elif flag == "-t":
-		CClient.SetOutpath(val)
-		if CClient.DebugOutput == True:
-			print "flag: -t %s" % val
-			dbSendPath = val
-
-
-
-CClient.LoadOptions()
-
-if CClient.VerboseOutput == True:
-	pass
-#	print "Module working dir:", ModuleWDir
-#	print "Module absolute path:", ModulePathAbs
-	
-# # list of Integers (KBs)
-# FreeSpace = []
-
-# # iterate through servers, append `df` results of each
-# for s in CClient.ServerList:
-	# # todo code not optimized
-	# if CClient.DebugOutput == True:
-		# print "Calling Df(): " + s.get_host()
-
-	# usage = s.Df()
-	# if usage > 0:
-		# if CClient.DebugOutput == True:
-			# print "appending (FreeSpace): " + str(usage)
-		# FreeSpace.append(usage)
-	# else:
-		# if CClient.DebugOutput == True:
-			# print "appending (ErrorServers): " + s.get_host()
-		# ErrorServers.append(s.get_host())
-
-# if CClient.VerboseOutput == True:
-	# #print hashspace information
-	# hashLowerBound = 0
-	# for s in CClient.ServerList:
-		# spacePercentage = float(float(FreeSpace[CClient.ServerList.index(s)]) / float(sum(FreeSpace)))
-		# hashUpperBound = int(int("ffffffffffffffffffffffffffffffffffffffff", 16) * float(float(FreeSpace[CClient.ServerList.index(s)]) / float(sum(FreeSpace)))) + hashLowerBound - 1
-		# if hashUpperBound > 0xffffffffffffffffffffffffffffffffffffffff:
-			# hashUpperBound = 0xffffffffffffffffffffffffffffffffffffffff
-		# s.HashSpaceLowerBound = hashLowerBound
-		# s.HashSpaceUpperBound = hashUpperBound
-		
-		# print "hashspace percentage: %.4f\nLowerBound: %x\nUpperBound: %x\n" % (spacePercentage, hashLowerBound, hashUpperBound)
-		
-		# hashLowerBound = hashUpperBound + 1
 
 # Re-scan the args list for action options
 
 for i in optlist:
 	flag, val = i
 
-	if flag == "-l":
-#		ListServerContents(ServerList)
-		if CClient.DebugOutput == True:
-			print "flag: -l"
+	## --list-files: print files in db
+	if flag == "-l" or flag == "--list-files" or flag == "--list":
+		if 	DebugOutput == True:
+			print "flag: --list-files", val
+		#files = CClient.ListFiles()
+		
+		sock.send("l "+val.strip())
+		fileListString = sock.recv(sock_buf_size).strip()
+		#print " ## '--list-files' response:", fileListString
+		
+		print fileListString
+		
+		sock.close()
+		sys.exit()
 			
 	# --add-server: Add unassigned server to list
-	elif flag == "--add-server":
-		if CClient.DebugOutput == True:
-			pass
-			#print "flag: --add-server %s" % val
+	if flag == "--add-server":
 		if len(val) != 0:
-			ret = CClient.AddServer(val)
+			if 	DebugOutput == True:
+				print "flag: --add-server", val
+				
+			# truncate to fit packet buffer
+			val = val.strip()
+			s = (val[:(sock_buf_size-2)]) if len(val) > (sock_buf_size-2) else val
+
+			print " # '--add-server' Sending: '" + "a "+s + "'"
+			sent = sock.send("a "+s)
+			data = sock.recv(sock_buf_size)
+			print " ## '--add-server' response:", data.strip()
+			
+			sock.close()
+			sys.exit()
 		else:
 			print "ERROR: --add-server <user@host:path>"
+			sock.close()
 			sys.exit()
 			
 	# --consolidate-layout: Reevaluate servers and redistribute pieces
 	elif flag == "--consolidate-layout":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: --consolidate-layout"
-		CClient.ConsolidateLayout(False)
+
+		sent = sock.send('c')
+		data = sock.recv(sock_buf_size)
+		print " ## '--consolidate-layout' response:", data.strip()
+		
+		sock.close()
 		sys.exit()
 
-	# -c, --create-map: Create Map
-	elif flag == "-c" or flag == "--create-map":
-		if CClient.DebugOutput == True:
-			print "flag: -c %s" % val
-		if len(val) != 0:
-			ret = CClient.CreateMap(val)
-		else:
-			print "ERROR: -c <file>, len(file) == 0"
-			sys.exit()
 
 	# --find-file: Search maps for matching filenames
 	elif flag == "--find-file":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: --find-file %s" % val
 		if len(val) != 0:
 			ret = CClient.FindFile(val)
@@ -197,24 +137,38 @@ for i in optlist:
 				print "returned: " + r
 		else:
 			print "ERROR: --find-file <filename_regex>, len(filename_regex) == 0"
+			sock.close()
 			sys.exit()
 
 	# -r, --receive: Get File
 	elif flag == "-r" or flag == "--receive":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: -r %s" % val
 		if len(val) > 0:
-			ret = CClient.ReceiveFromCloud(val, dbReceivePath)
-			if len(ret) > 0:
-				print "Error receiving the following files:"
-				for f in ret:
-					print " " + f
+			
+			dbpath = val
+			localpath = ''
+			
+			for i in sys.argv[1:]:
+				print "i:", i
+				if i[0] != '-' and len(i) > 1:
+					if i != dbpath:
+						localpath = i
+						break
+						
+			print "localpath:", localpath
+			print "dbpath:", dbpath
+			
+			sock.send('g \''+localpath + '\' \'' + dbpath + '\'')
+			data = sock.recv(sock_buf_size)
+			print " ## '--receive' response:", data
+			
 		else:
-			print "SYNTAX ERROR: -r <path>, len(path) == 0"
+			print "SYNTAX ERROR: -r '<dbpath>' '<localpath>'"
 
 	# --scan-subnet
 	elif flag == "-a" or flag == "--scan-subnet":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: --scan-subnet %s" % val
 		if len(val) != 0:
 			for r in ListSubnetIPs(val):
@@ -229,92 +183,80 @@ for i in optlist:
 
 	# -s, --send-to-cloud: Send File To Cloud
 	elif flag == "-s" or flag == "--send-to-cloud":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: -s %s" % val
-		if len(val) != 0:
-			ret = CClient.SendToCloud(val, dbSendPath)
-		else:
-			print "ERROR: -s <path>, len(path) == 0"
 			
-	# --set-redundancy: Send File To Cloud
+		if len(val) > 0:
+			
+			localpath = val
+			dbpath = '/'
+			
+			for i in sys.argv[1:]:
+				print "i:", i
+				if i[0] != '-' and len(i) > 1:
+					if i != localpath:
+						dbpath = i
+						break
+						
+			print "localpath:", localpath
+			print "dbpath:", dbpath
+			
+			sock.send('p \''+localpath + '\' \'' + dbpath + '\'')
+			data = sock.recv(sock_buf_size)
+			print " ## '--send-to-cloud' response:", data
+	
+		else:
+			print "ERROR: -s '<localpath>' '<dbpath>'  (quotes required!)"
+			
+	# --set-redundancy
 	elif flag == "--set-redundancy":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: --set-redundancy %s" % val
 		if len(val) != 0 and int(val) > 0:
-			CClient.ChangeRedundancy(int(val))
+		
+			#CClient.ChangeRedundancy(int(val))
+			
+			sock.send('r '+val)
+			data = sock.recv(sock_buf_size)
+			print " ## '--set-redundancy' response:", data
+			
 		else:
-			print "ERROR: --set-redundancy <val>, val < 1"
+			print "ERROR: --set-redundancy <val>; val must be > 1"
+			
+		sock.close()
+		sys.exit()
 
 	# --show-usage
 	elif flag == "--show-usage" or flag == "--print-usage":
-		if CClient.DebugOutput == True:
+		if 	DebugOutput == True:
 			print "flag: ---show-usage"
 
-		stats,err = CClient.GetUsageStatistics()
+		sock.send('u')
+		data = sock.recv(sock_buf_size)
+		print " ## '--show-usage' response:", data
 
-		if len(stats) > 0:
-			print "available space in KB:"
-			for i in stats:
-				print i
-		if len(err) > 0:
-			for e in err:
-				print "df server error: " + e
+		# if len(stats) > 0:
+			# print "available space in KB:"
+			# for i in stats:
+				# print i
+		# if len(err) > 0:
+			# for e in err:
+				# print "df server error: " + e
+				
+		sock.close()
+		sys.exit()
 		
+	# quit
+	elif flag == "-q" or flag == "--quit" or flag == "--exit":
+		if 	DebugOutput == True:
+			print "flag: --quit"
 
-
-	# --update-piece: duplicate piece copies or delete copies across servers
-	#					to meet redundancy specifications
-	# elif flag == "--update-piece":
-		# if CClient.DebugOutput == True:
-			# print "flag: --update-piece %s" % val
-		# if len(val) != 0:
-			# ret = CClient.UpdatePiece(val)
-		# else:
-			# print "ERROR: --update-piece <piecename>, len(piecename) == 0"
-
-	# # --update-map: duplicate piece copies or delete copies across servers
-	# #					to meet redundancy specifications
-	# elif flag == "--update-map":
-		# if CClient.DebugOutput == True:
-			# print "flag: --update-map %s" % val
-		# if len(val) != 0:
-			# downpieces, downfiles = CClient.UpdateMap(val)
-			# print "down pieces:",
-			# for p in downpieces:
-				# print p + '\n'
-			# print "down files:",
-			# for f in downfiles:
-				# print f + '\n'
-		# else:
-			# print "ERROR: --update-map <mappath>, len(mappath) == 0"
-
-
-
-
-#for s in CClient.ServerList:
-#	output1 = serverls(s.get_host(), s.get_user(), s.get_path())
-#	print "output1: %s" % output1
-
-
-
-
-#output2 = serverls('ppgbox', 'cold', '/home/cold/repository')
-#print "output2: %s" % output2
-
-#print ":", os.path.abspath('.')
-
-
-
-#ORIGIFS="$IFS"
-#IFS=$'\n'
-#	LocalFileListTemp=( `ls -1 $RepositoryPath` )
-#	LocalFileListTempSize=${#LocalFileListTemp[*]}
-#IFS="$ORIGIFS"
-#
-## loop through initial entries and make them full-path rather than just filenames
-#i=0
-#while [[ $i -lt $LocalFileListTempSize ]]
-#do
-#	LocalFileListTemp[i]="$RepositoryPath/${LocalFileListTemp[i]}"
-#	(( i++ ))
-#done
+		sent = sock.send('q')
+		data = sock.recv(sock_buf_size)
+		print " ## '--quit' response:", data.strip()
+		
+		sock.close()
+		sys.exit()
+		
+sock.close()
+sys.exit()

@@ -1,3 +1,5 @@
+#!/usr/bin/python
+#
 # Mitch Andrews
 
 # cold.globals.py program dependencies:
@@ -10,10 +12,13 @@
 #	* on server add, clear motd if possible, or notify
 #	* on server add, make repository folder if necessary
 
-import sys
+
 import os
-import subprocess
+import pipes
 import re
+import subprocess
+import sys
+
 from ccfroutines import *
 
 class RepositoryServer:
@@ -171,6 +176,11 @@ class RepositoryServer:
 			return -1
 
 		SendFileToServer(self.get_host(), self.get_user(), remotepath, localpath)
+		time.sleep(random.random() / 10)
+		while not IsFile(self.get_host(), self.get_user(), remotepath):
+			print " ## SendFile retrying:", self.get_host(), remotepath, localpath
+			SendFileToServer(self.get_host(), self.get_user(), remotepath, localpath)
+
 
 		# todo: update DfCache here, something like:
 		# self.DfConsumeFile(localpath)

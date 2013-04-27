@@ -1,3 +1,5 @@
+#!/usr/bin/python
+#
 # Mitch Andrews
 # 11/15/10
 
@@ -7,13 +9,15 @@
 #  -- requirements should be kept to almost zero,
 #   so this can be the first include in the program.
 
-import sys
-import os
-import subprocess
-import re
-import time
 import imp
+import os
+import pipes
+import random
+import re
 import string
+import subprocess
+import sys
+import time
 # req for ipcalc.Network():
 ipcalc_mod = imp.load_source("ipcalc", "./ipcalc/ipcalc.py")
 
@@ -30,6 +34,7 @@ ipcalc_mod = imp.load_source("ipcalc", "./ipcalc/ipcalc.py")
 def ShellOutputLines(cmd):
 
 	p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+	#p.wait()
 	temp = p.stdout.read()
 	temp = temp.split('\n')
 
@@ -67,6 +72,7 @@ def serverls(host, user, remotepath):
 #		stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 	p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	#p.wait()
 
 	output,err = p.communicate(r'ls "%s"' % remotepath)
 
@@ -88,7 +94,8 @@ def serverdf(host, user, remotepath):
 
 	# df -B 1024 . | tail -n +2 | awk '{print $4}'
 	p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
+	#p.wait()
+	
 	output,err = p.communicate("df -B 1024 . | tail -n +2 | awk '{print $4}' \"%s\"" % remotepath)
 #	p.terminate()
 
@@ -98,6 +105,14 @@ def serverdf(host, user, remotepath):
 
 	return output.strip()
 
+
+def IsFile(host, user, remotepath):
+	#p = subprocess.Popen(['ssh', host, 'test -f %s' % pipes.quote(remotepath)])
+	p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host, 'test -f ' + pipes.quote(remotepath)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	p.wait()
+	#print " # IsFile() return code:", pipes.quote(remotepath), (p.returncode == 0)
+	
+	return (p.returncode == 0)
 
 
 # Called by SendFileToCloud(path) to send pieces from a map
@@ -109,6 +124,7 @@ def SendFileToServer(host, user, remotepath, localpath):
 	#print "scp: " + localpath.strip() + " " + scpstring.strip()
 
 	p = subprocess.Popen(['scp', localpath, scpstring], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	#p.wait()
 #	p.terminate()
 
 # Called by ReceiveFromCloud() to receive pieces from a map
@@ -138,8 +154,16 @@ def GetFileFromServer(host, user, remotepath, localpath):
 
 #	print "scp: " + scpstring.strip() + " " + localpath.strip()
 
-	p = subprocess.Popen(['scp', scpstring, localpath], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	p.wait()
+	i = 0
+	while not os.path.isfile(localpath):
+		p = subprocess.Popen(['scp', scpstring, localpath], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		p.wait()
+		time.sleep(random.random() / 10)
+		i = i + 1
+		
+		if i > 4:
+			print " ## Error max retries: GetFileFromServer", host, user, remotepath, localpath
+			return -2
 
 	# i=20
 	# while not os.path.exists(localpath) and i > 0:
@@ -165,6 +189,7 @@ def GetFileFromServer(host, user, remotepath, localpath):
 # PURPOSE: Remove a file at 'remotepath' from host over ssh
 def RemoveFileFromServer(host, user, remotepath):
 	p = subprocess.Popen(['ssh', '-T', user + '@' + host, "rm " + remotepath])
+	#p.wait()
 
 	# return zero for no error
 	return 0
@@ -182,7 +207,7 @@ def HasPasswordlessSSH(host, user):
 	#  $ ssh -o 'PreferredAuthentications=publickey' cold@ppgbox "echo"
 	#  which prints "Permission denied (publickey,keyboard-interactive)." on failure, empty on success
 #	p = subprocess.Popen(['ssh', '-o \'PreferredAuthentications=publickey\'', user + '@' + host, 'echo'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-	ret = subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', user + '@' + host, 'echo'], stdout=subprocess.PIPE)
+	ret = subprocess.call(['ssh', '-q', '-T', '-o PreferredAuthentications=publickey', '-o UserKnownHostsFile=/dev/null', '-o StrictHostKeyChecking=no', user + '@' + host, 'echo'], stdout=subprocess.PIPE)
 #	print "ret: %i" % ret
 
 	if ret == 0:
@@ -194,8 +219,9 @@ def HasPasswordlessSSH(host, user):
 # assumes a password-less login
 def MuteSSHLogin(host, user):
 	# Verify passwordless
-	if subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', user + '@' + host, 'echo'], stdout=subprocess.PIPE) == 0:
+	if subprocess.call(['ssh', '-T', '-o PreferredAuthentications=publickey', '-o UserKnownHostsFile=/dev/null', '-o StrictHostKeyChecking=no', user + '@' + host, 'echo'], stdout=subprocess.PIPE) == 0:
 		p = subprocess.Popen(['ssh', '-T', user + '@' + host, 'touch .hushlogin'])
+		#p.wait()
 
 
 # Given a string, determine if it is a valid MD5 hash
