@@ -17,7 +17,8 @@ precache = false
 #cache-path = ~/cold/.cache
 
 # Piece size for map creation in KB
-piece-size = 1024
+#piece-size = 1024
+piece-size = 512
 
 ### Server options ###
 

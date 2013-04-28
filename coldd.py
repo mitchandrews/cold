@@ -34,10 +34,11 @@ from ccold import *
 
 client = 0
 address = 0
-def CleanExit():
+def CleanExit(a, b):
 	print " ## CleanExit()", client
 	#os.remove("/tmp/.cold_pid")
-	client.close()
+	if client != 0:
+		client.close()
 	sys.exit(0)
 
 	
@@ -85,26 +86,17 @@ CClient.LoadOptions()
 CClient.VerboseOutput = VerboseOutput
 CClient.DebugOutput = DebugOutput
 
-
-#CClient.SQLDataSource.initDb(CClient.SQLDataSource.dbPath)
-#CClient.SQLDataSource.mkdirs("/test")
-#print "getId '/test': ", CClient.SQLDataSource.getId("/test")
-#print "ls '/':"
-#print CClient.SQLDataSource.ls("/")
-
-
-## Write PID info
-pidfile = file("/tmp/.cold_pid", "w")
-buffer = pidfile.write(`os.getpid()`)
-pidfile.close()
+for s in CClient.ServerList:
+	#s.StartSSH()
+	print ' ## SSHConn ' + s.get_host(), s.SSHCon
 
 
 ## Catch signals to do a clean exit
 #signal.signal(signal.CTRL_C_EVENT, CleanExit)
 #signal.signal(signal.CTRL_BREAK_EVENT, CleanExit)
-#signal.signal(signal.SIGQUIT, CleanExit)
-#signal.signal(signal.SIGINT, CleanExit)
-#signal.signal(signal.SIGABRT, CleanExit)
+signal.signal(signal.SIGQUIT, CleanExit)
+signal.signal(signal.SIGINT, CleanExit)
+signal.signal(signal.SIGABRT, CleanExit)
 
 
 ## Spawn listening socket
@@ -115,9 +107,9 @@ sockConnected = False
 while not sockConnected:
 	try:
 		serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		serversocket.bind(('localhost', 995))
+		serversocket.bind(('localhost', 996))
 	except Exception:
-		print "socket.error: [Errno 98] Address already in use; sleeping 15 seconds"
+		print 'socket.error: [Errno 98] Address already in use; sleeping 15 seconds'
 		time.sleep(15)
 		continue
 	

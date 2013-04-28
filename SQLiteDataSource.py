@@ -61,14 +61,14 @@ class SQLiteDataSource:
 		self.Cur.execute("DROP TABLE IF EXISTS FileList")
 		self.Con.commit()
 	
-		print " ## initDb QUERY: CREATE TABLE PieceList(Id INTEGER PRIMARY KEY, SequenceNo INT, Hash TEXT, FileID INT)"
-		self.Cur.execute("CREATE TABLE PieceList(Id INTEGER PRIMARY KEY, SequenceNo INT, Hash TEXT, FileID INT)")
-		print " ## initDb QUERY: CREATE TABLE FileList(Id INTEGER PRIMARY KEY, Type INT, Name TEXT, ParentId INT)"
-		self.Cur.execute("CREATE TABLE FileList(Id INTEGER PRIMARY KEY, Type INT, Name TEXT, ParentId INT)")
+		print " ## initDb QUERY: CREATE TABLE PieceList(Id INTEGER PRIMARY KEY, FileID INT, SequenceNo INT, Hash TEXT)"
+		self.Cur.execute("CREATE TABLE PieceList(Id INTEGER PRIMARY KEY, FileID INT, SequenceNo INT, Hash TEXT)")
+		print " ## initDb QUERY: CREATE TABLE FileList(Id INTEGER PRIMARY KEY, ParentId INT, Type INT, Name TEXT)"
+		self.Cur.execute("CREATE TABLE FileList(Id INTEGER PRIMARY KEY, ParentId INT, Type INT, Name TEXT)")
 		
 		# Create root folder
-		print " ## initDb QUERY: INSERT INTO FileList values(0, 1, '/', 0)"
-		self.Cur.execute("INSERT INTO FileList values(0, 1, '/', 0)")
+		print " ## initDb QUERY: INSERT INTO FileList(Id, Type, Name, ParentId) values(0, 1, '/', 0)"
+		self.Cur.execute("INSERT INTO FileList(Id, Type, Name, ParentId) values(0, 1, '/', 0)")
 		
 		self.Con.commit()
 		
@@ -208,7 +208,8 @@ class SQLiteDataSource:
 			print "ls results:"
 			for t in r.fetchall():
 				print "got:", t[0]
-				fileList.append(t[0])
+				if t[0] != '/':
+					fileList.append(t[0])
 		
 			return fileList
 			

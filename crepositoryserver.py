@@ -14,8 +14,10 @@
 
 
 import os
+import paramiko
 import pipes
 import re
+import socket
 import subprocess
 import sys
 
@@ -43,6 +45,13 @@ class RepositoryServer:
 		self.HashSpaceLowerBound = -1
 		self.HashSpaceUpperBound = -1
 		self.Band = -1
+		
+		self.SSHCon = -1
+		self.SFTPCon = -1
+		
+	def __exit__(self, type, value, traceback):
+		self.SFTPCon.close()
+		self.SSHCon.close()
 
 	def __eq__(self, s):
 		if self.host == s.get_host() and self.user == s.get_user() and self.path == s.get_path():
@@ -66,6 +75,20 @@ class RepositoryServer:
 		print "=== %s@%s:%s === [ %d 0x%x:0x%x ]".strip() % (self.user, self.host, self.path, self.Band, self.HashSpaceLowerBound, self.HashSpaceUpperBound)
 
 
+	def StartSSH(self):
+		#print " ## StartSSH", self.get_host()
+		## establish ongoing SSH connection ##
+		conn = paramiko.SSHClient()
+		conn.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+		try:
+			conn.connect(self.get_host(), username=self.get_user())
+		except (paramiko.SSHException, socket.error) as se:
+			print " # Thread error establishing Paramiko SSH to", self.get_host()
+			return
+			
+		# copy connection to persistent obj
+		self.SSHCon = conn
+		self.SFTPCon = self.SSHCon.open_sftp()
 
 
 	# df returns the number of KB available at <path>
@@ -80,11 +103,20 @@ class RepositoryServer:
 		if (self.host == "" or self.user == "" or self.path == ""):
 			return -1
 
-		# open ssh connection
-		p = subprocess.Popen(['ssh', '-T', '-q', self.user + '@' + self.host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		output = ''
+		err = ''
+		if self.SSHCon != -1:
+			(stdin, stdout, stderr) = self.SSHCon.exec_command('df -B 1024 %s | tail -n +2 | awk \'{print $4}\'' % self.path)
+		
+			output = stdout.read().strip()
+			
+		else:
+			print " ## Df WARNING: NOT using Paramiko!"
+			# open ssh connection
+			p = subprocess.Popen(['ssh', '-T', '-q', self.user + '@' + self.host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-		# df -B 1024 <path> | tail -n +2 | awk '{print $4}'
-		output,err = p.communicate('df -B 1024 %s | tail -n +2 | awk \'{print $4}\'' % self.path)
+			# df -B 1024 <path> | tail -n +2 | awk '{print $4}'
+			(output, err) = p.communicate('df -B 1024 %s | tail -n +2 | awk \'{print $4}\'' % self.path)
 
 	#	p.terminate()
 
@@ -96,7 +128,7 @@ class RepositoryServer:
 			return -1
 
 		# Update the cache
-		self.DfCache = int(output.strip())
+		self.DfCache = int(output)
 		self.DfCacheIsCurrent = True
 
 		return self.DfCache
@@ -175,11 +207,10 @@ class RepositoryServer:
 			print "ERROR: crepositoryserver::SendFile() does not exist: " + localpath
 			return -1
 
-		SendFileToServer(self.get_host(), self.get_user(), remotepath, localpath)
-		time.sleep(random.random() / 10)
-		while not IsFile(self.get_host(), self.get_user(), remotepath):
+		SendFileToServer(self.get_host(), self.get_user(), remotepath, localpath, self.SFTPCon)
+		while not IsFile(self.get_host(), self.get_user(), remotepath, self.SSHCon):
 			print " ## SendFile retrying:", self.get_host(), remotepath, localpath
-			SendFileToServer(self.get_host(), self.get_user(), remotepath, localpath)
+			SendFileToServer(self.get_host(), self.get_user(), remotepath, localpath, self.SFTPCon)
 
 
 		# todo: update DfCache here, something like:
@@ -195,14 +226,14 @@ class RepositoryServer:
 		if os.path.isfile(localpath):
 			print "WARNING: crepositoryserver::ReceiveFile() overwriting existing file: " + localpath
 
-		GetFileFromServer(self.get_host(), self.get_user(), remotepath, localpath)
+		GetFileFromServer(self.get_host(), self.get_user(), remotepath, localpath, self.SFTPCon)
 		# todo: update DfCache here
 
 		return 0
 
 		
 	def RemoveFile(self, remotepath):
-		RemoveFileFromServer(self.get_host(), self.get_user(), remotepath)
+		RemoveFileFromServer(self.get_host(), self.get_user(), remotepath, self.SFTPCon)
 
 		# todo: update DfCache here, something like:
 		# self.DfFreeFile(localpath)

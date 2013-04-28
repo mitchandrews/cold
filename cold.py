@@ -27,7 +27,7 @@ DebugOutput = False
 ## Instantiate socket to connect to daemon ##
 sock_buf_size = 1024
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect(('localhost', 995))
+sock.connect(('localhost', 996))
 
 
 # Getopt complete argument list

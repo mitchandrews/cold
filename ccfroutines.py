@@ -61,24 +61,28 @@ def WDir():
 # serverls returns an array of the contents of a remote directory using ssh.
 # the connection is assumed to be passwordless, and this function is
 # otherwise undefined.
-def serverls(host, user, remotepath):
+def serverls(host, user, remotepath, SSHCon=''):
 
 	if (host == "" or user == "" or remotepath == ""):
 		print "serverls error"
 		return "-1"
 
-#	output = subprocess.check_output(
-#		['ssh', user + '@' + host, 'ls', remotepath],
-#		stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+	if SSHCon != '':
+		(stdin, stdout, stderr) = SSHCon.exec_command("test -f %s; echo $?" % remotepath)
+		
+		return (stdout.read().strip().split('\n'), stderr.read().strip())
+		
+	else:
+		print " ## serverls WARNING: NOT using Paramiko"
 
-	p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	#p.wait()
+		p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		#p.wait()
 
-	output,err = p.communicate(r'ls "%s"' % remotepath)
+		output,err = p.communicate(r'ls "%s"' % remotepath)
 
-	output = output.split('\n')
+		output = output.split('\n')
 
-	return (output, err.strip())
+		return (output, err.strip())
 
 
 # serverdf returns the number of kilobytes available on the device
@@ -86,53 +90,84 @@ def serverls(host, user, remotepath):
 # returns:
 #	int >= 0	number of free kilobytes
 #	-1			error
-def serverdf(host, user, remotepath):
+def serverdf(host, user, remotepath, SSHCon=''):
 
 	if (host == "" or user == "" or remotepath == ""):
 		print "serverdf error"
 		return "-1"
+		
+	if SSHCon != '':
+		print " ## serverdf using Paramiko:", SSHCon
+		
+		(stdin, stdout, stderr) = SSHCon.exec_command("df -B 1024 . | tail -n +2 | awk '{print $4}' \"%s\"" % remotepath)
+		
+		return stdin.read().strip()
+		
+	else:
 
-	# df -B 1024 . | tail -n +2 | awk '{print $4}'
-	p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	#p.wait()
-	
-	output,err = p.communicate("df -B 1024 . | tail -n +2 | awk '{print $4}' \"%s\"" % remotepath)
-#	p.terminate()
+		# df -B 1024 . | tail -n +2 | awk '{print $4}'
+		p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		#p.wait()
+		
+		output,err = p.communicate("df -B 1024 . | tail -n +2 | awk '{print $4}' \"%s\"" % remotepath)
+	#	p.terminate()
 
-	if (len(output) == 0 or int(output) < 0):
-		print "serverdf result error"
-		return "-1"
+		if (len(output) == 0 or int(output) < 0):
+			print "serverdf result error"
+			return "-1"
 
-	return output.strip()
+		return output.strip()
 
 
-def IsFile(host, user, remotepath):
-	#p = subprocess.Popen(['ssh', host, 'test -f %s' % pipes.quote(remotepath)])
-	p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host, 'test -f ' + pipes.quote(remotepath)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	p.wait()
-	#print " # IsFile() return code:", pipes.quote(remotepath), (p.returncode == 0)
-	
-	return (p.returncode == 0)
+def IsFile(host, user, remotepath, SSHCon=''):
+
+	if SSHCon != '':
+		(stdin, stdout, stderr) = SSHCon.exec_command("test -f %s; echo $?" % remotepath)
+		
+		#for line in stdout.read().splitlines():
+		#	print " ## serverdf Paramiko stdout:", line
+		
+		if stdout.read().strip() == '0':
+			return True
+		else:
+			return False
+		
+	else:
+		print " ## IsFile WARNING: NOT using Paramiko!"
+		
+		#p = subprocess.Popen(['ssh', host, 'test -f %s' % pipes.quote(remotepath)])
+		p = subprocess.Popen(['ssh', '-T', '-q', user + '@' + host, 'test -f ' + pipes.quote(remotepath)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		p.wait()
+		#print " # IsFile() return code:", pipes.quote(remotepath), (p.returncode == 0)
+		
+		return (p.returncode == 0)
+		
 
 
 # Called by SendFileToCloud(path) to send pieces from a map
 # Called indirectly by -s [--send] flag
-def SendFileToServer(host, user, remotepath, localpath):
+def SendFileToServer(host, user, remotepath, localpath, SFTPCon=''):
 
-	scpstring = user + "@" + host + ":" + remotepath
+	if SFTPCon != '':
+		#print "scp: " + localpath + " " + remotepath
+		SFTPCon.put(localpath, remotepath)
+	else:
+		print " ## SendFileToServer WARNING: NOT using Paramiko"
+		
+		scpstring = user + "@" + host + ":" + remotepath
 
-	#print "scp: " + localpath.strip() + " " + scpstring.strip()
+		#print "scp: " + localpath.strip() + " " + scpstring.strip()
+		p = subprocess.Popen(['scp', localpath, scpstring], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		p.wait()
 
-	p = subprocess.Popen(['scp', localpath, scpstring], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-	#p.wait()
-#	p.terminate()
+		
 
 # Called by ReceiveFromCloud() to receive pieces from a map
 # Called indirectly by -r [--receive] flag
 # RETURNS:
 #	zero:		no error
 #	non-zero:	error
-def GetFileFromServer(host, user, remotepath, localpath):
+def GetFileFromServer(host, user, remotepath, localpath, SFTPCon=''):
 
 	# if file already exists and is not a file (e.g. directory, device): (error)
 	if os.path.exists(localpath) and not os.path.isfile(localpath):
@@ -150,34 +185,24 @@ def GetFileFromServer(host, user, remotepath, localpath):
 		print "ERROR: GFFS(): could not override file: " + localpath
 		return -3
 
-	scpstring = user + "@" + host + ":" + remotepath
-
-#	print "scp: " + scpstring.strip() + " " + localpath.strip()
-
 	i = 0
 	while not os.path.isfile(localpath):
-		p = subprocess.Popen(['scp', scpstring, localpath], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		p.wait()
-		time.sleep(random.random() / 10)
+		if SFTPCon != '':
+			SFTPCon.get(remotepath, localpath)
+		else:
+			print " ## GetFileFromServer WARNING: NOT using Paramiko!"
+			scpstring = user + "@" + host + ":" + remotepath
+			#	print "scp: " + scpstring.strip() + " " + localpath.strip()
+			p = subprocess.Popen(['scp', scpstring, localpath], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			p.wait()
+			
+		if i > 1:
+			time.sleep(random.random() / 10)
 		i = i + 1
 		
 		if i > 4:
 			print " ## Error max retries: GetFileFromServer", host, user, remotepath, localpath
 			return -2
-
-	# i=20
-	# while not os.path.exists(localpath) and i > 0:
-		# print "sleeping (exists)..."
-		# time.sleep(.1)
-		# i=i-1
-	# if not os.path.exists(localpath):
-		# return -1
-
-	# j=20
-	# while not os.path.getsize(localpath) and j > 0:
-		# print "sleeping (size)..."
-		# time.sleep(.1)
-		# j=j-1
 	
 	if os.path.getsize(localpath) < 1:
 		return -2
@@ -187,12 +212,21 @@ def GetFileFromServer(host, user, remotepath, localpath):
 
 
 # PURPOSE: Remove a file at 'remotepath' from host over ssh
-def RemoveFileFromServer(host, user, remotepath):
-	p = subprocess.Popen(['ssh', '-T', user + '@' + host, "rm " + remotepath])
-	#p.wait()
+def RemoveFileFromServer(host, user, remotepath, SFTPCon=''):
 
-	# return zero for no error
-	return 0
+	if SFTPCon != '':
+		SFTPCon.exec_command("rm " + remotepath)
+		
+		return 0
+		
+	else:
+		print " ## RemoveFileFromServer WARNING: NOT using Paramiko"
+		
+		p = subprocess.Popen(['ssh', '-T', user + '@' + host, "rm " + remotepath])
+		#p.wait()
+
+		# return zero for no error
+		return 0
 
 
 # PURPOSE: return the size of a remote file in KB

@@ -7,6 +7,7 @@ then
 	then
 		rm -rf /home/$USER/.cache/*
 		rm -rf /home/$USER/maps/*
+		rm -rf /home/$USER/receive/*
 	fi
 
 	c=7
@@ -39,7 +40,7 @@ rm -f layout-1.txt*
 rm -f layout-2.txt*
 rm -f cold.db*
 rm -f output.txt* 2>/dev/null
-rm -f ConsistencyChecker.sh*
+rm -f monitor.sh*
 rm -f id_rsa_cold*
 
 sudo rm /tmp/.cold* /tmp/filter-sha1* /tmp/rm-pieces* /tmp/mv-pieces* 2>/dev/null
@@ -62,7 +63,7 @@ wget -q http://192.168.0.106:8080/repo/layout.txt
 wget -q http://192.168.0.106:8080/repo/layout-1.txt
 wget -q http://192.168.0.106:8080/repo/layout-2.txt
 wget -q http://192.168.0.106:8080/repo/cold.db
-wget -q http://192.168.0.106:8080/repo/ConsistencyChecker.sh
+wget -q http://192.168.0.106:8080/repo/monitor.sh
 wget -q http://192.168.0.106:8080/repo/id_rsa_cold
 wget -q http://192.168.0.106:8080/repo/id_rsa_cold.pub
 

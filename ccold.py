@@ -60,7 +60,6 @@ class Cold:
 		# they will be listed in ServerList in the order A, A, B. 
 		# 'Redundancy' defines the copy count.
 		self.ServerList = []
-		self.ServerSSHCons = []
 		self.SSHPrivateKeyFile = "id_rsa_cold"
 		self.SSHPublicKeyFile = "id_rsa_cold.pub"
 		
@@ -69,7 +68,6 @@ class Cold:
 		self.VerboseOutput = True
 		self.DebugOutput = True
 		self.PretendMode = False
-
 
 		if not os.path.isdir(self.CachePath):
 			os.mkdir(self.CachePath)
@@ -92,27 +90,27 @@ class Cold:
 				
 			# do only those that are on servers where index modulus 10 equals thread index
 			for j in self.WaitingSendJobs:
-				if ((j[0] % self.MaxTransferThreads) - 1) == self.threadID:
-					time.sleep(random.random() / 10)
+				if ((j[0] % self.MaxTransferThreads)) == self.threadID:
+					#time.sleep(random.random() / 100)
 					print " # Thread", self.threadID, "claiming job", self.WaitingSendJobs.index(j), j[0], j[1], j[2]
 					(index, arga, argb) = self.WaitingSendJobs[self.WaitingSendJobs.index(j)][0], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][1], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][2]
 					#print index, arga, argb
 					self.ServerList[index].SendFile(arga, argb)
 					
 			for j in self.WaitingRecvJobs:
-				if ((j[0] % self.MaxTransferThreads) - 1) == self.threadID:
-					time.sleep(random.random() / 10)
-					print " # Thread", self.threadID, "claiming job", self.WaitingRecvJobs.index(j), j[0], j[1], j[2]
+				if ((j[0] % self.MaxTransferThreads)) == self.threadID:
+					#time.sleep(random.random() / 100)
+					#print " # Thread", self.threadID, "claiming job", self.WaitingRecvJobs.index(j), j[0], j[1], j[2]
 					(index, arga, argb) = self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][0], self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][1], self.WaitingRecvJobs[self.WaitingRecvJobs.index(j)][2]
 					#print index, arga, argb
 					while not os.path.isfile(argb):
 						self.ServerList[index].ReceiveFile(arga, argb)
-						time.sleep(random.random() / 10)
+						#time.sleep(random.random() / 100)
 						#print "## ReceiveFile attempt:", arga, argb
 
 	
 	class AddServerThread(threading.Thread):
-		def __init__(self, threadID, threadCount, serverList, minFreeMB, SSHCons, pubKeyFile, privKeyFile):
+		def __init__(self, threadID, threadCount, serverList, minFreeMB, pubKeyFile, privKeyFile):
 			threading.Thread.__init__(self)
 			self.threadID = threadID
 			self.threadCount = threadCount
@@ -120,12 +118,10 @@ class Cold:
 			
 			# transferred in from Cold class
 			self.ServerList = serverList
-			self.ServerSSHCons = SSHCons
 			self.SSHPublicKeyFile = pubKeyFile
 			self.SSHPrivateKeyFile = privKeyFile
 			
 		def run(self):
-			time.sleep(random.random() / 10)
 			
 			for i in range(0, len(self.ServerList)):
 				if not ((i % self.threadCount) == self.threadID):
@@ -135,6 +131,7 @@ class Cold:
 				
 				## Check if host is down ##
 				
+				
 				if HasPasswordlessSSH(self.ServerList[i].get_host(), self.ServerList[i].get_user()):
 					MuteSSHLogin(self.ServerList[i].get_host(), self.ServerList[i].get_user())
 				else:
@@ -142,12 +139,16 @@ class Cold:
 					self.ServerList[self.ServerList[i]].Band = -4
 					continue
 				
-				# Check free space in MB, only add server if minimum is met
+				self.ServerList[i].StartSSH()
+				
+				# Check free space in MB, remove if minimum not met
 				MBfree = self.ServerList[i].Df()/1024
 				if MBfree < float(self.minFreeMB):
 					print "WARNING: %s space low, removing: %f MB < %d MB" % (self.ServerList[i].get_host(), MBfree, self.minFreeMB)
 					self.ServerList[self.ServerList[i]].Band = -4
 					continue
+					
+				
 				
 				# ## give proper SSH credentials so others can login properly ##
 				# p = subprocess.Popen(['ssh', '-T', '-q', self.ServerList[i].get_user() + '@' + self.ServerList[i].get_host(), 'test -f %s' % pipes.quote("/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPrivateKeyFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -163,21 +164,7 @@ class Cold:
 					# # fix permissions
 					# p = subprocess.Popen(['ssh', '-T', '-q', self.ServerList[i].get_user() + '@' + self.ServerList[i].get_host(), "chmod 700 " + "/home/"+self.ServerList[i].get_user()+"/.ssh/"+self.SSHPrivateKeyFile], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 					# p.wait()
-				
-				
-				## establish ongoing SSH connection ##
-				conn = paramiko.SSHClient()
-				conn.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-				try:
-					conn.connect(self.ServerList[i].get_host(), username=self.ServerList[i].get_user())
-				except (paramiko.SSHException, socket.error) as se:
-					print " # Thread error establishing Paramiko SSH to", self.ServerList[i].get_host()
-					continue
-					
-				# copy connection to persistent obj
-				self.ServerSSHCons[i] = conn
-				
-				
+
 		
 		
 	# Get/Set the options file
@@ -371,14 +358,13 @@ class Cold:
 					rs.HashSpaceUpperBound = int(r[5], 16)
 					
 				self.ServerList.append(rs)
-				self.ServerSSHCons.append(-1)
 
 				
 		# spawn threads
 		print " ## LoadOptions threads starting!"
 		activeThreads = []
 		for t in range(0, 10):
-			n = self.AddServerThread(t, 10, self.ServerList, self.ServerFreeMinMB, self.ServerSSHCons, self.SSHPublicKeyFile, self.SSHPrivateKeyFile)
+			n = self.AddServerThread(t, 10, self.ServerList, self.ServerFreeMinMB, self.SSHPublicKeyFile, self.SSHPrivateKeyFile)
 			activeThreads.append(n)
 		
 		# start threads
@@ -390,8 +376,6 @@ class Cold:
 			activeThreads[t].join()
 			
 		print " ## LoadOptions threads done!"
-		
-		print " ## LoadOptions SSH Connections:", self.ServerSSHCons
 				
 				
 		# iterate over servers, deleting unavailable ones
@@ -446,6 +430,8 @@ class Cold:
 			MuteSSHLogin(rs.get_host(), rs.get_user())
 		else:
 			print "Fatal Error: password required for SSH to %s@%s" % (rs.get_user(), rs.get_host())
+			
+		rs.StartSSH()
 
 		# Check free space in MB, only add server if minimum is met
 		MBfree = rs.Df()/1024
@@ -454,6 +440,8 @@ class Cold:
 			return 1
 			
 		self.ServerList.append(rs)
+		
+		
 		
 		self.ConsolidateLayout(True)
 
