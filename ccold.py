@@ -92,7 +92,7 @@ class Cold:
 			for j in self.WaitingSendJobs:
 				if ((j[0] % self.MaxTransferThreads)) == self.threadID:
 					#time.sleep(random.random() / 100)
-					print " # Thread", self.threadID, "claiming job", self.WaitingSendJobs.index(j), j[0], j[1], j[2]
+					#print " # Thread", self.threadID, "claiming job", self.WaitingSendJobs.index(j), j[0], j[1], j[2]
 					(index, arga, argb) = self.WaitingSendJobs[self.WaitingSendJobs.index(j)][0], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][1], self.WaitingSendJobs[self.WaitingSendJobs.index(j)][2]
 					#print index, arga, argb
 					self.ServerList[index].SendFile(arga, argb)
@@ -1316,7 +1316,7 @@ class Cold:
 					continue
 					
 				# Make subdir in db
-				self.SQLDataSource.mkdirs(dbPath + "/" + dirName)
+				#self.SQLDataSource.mkdirs(dbPath + "/" + dirName)
 				
 				(targetId, targetType) = self.SQLDataSource.getId(dbPath + "/" + dirName + "/" + f)
 				# if already exists, warn and skip!
@@ -1327,7 +1327,7 @@ class Cold:
 				## Recurse to subfiles
 				# if directory, move into subdir:
 				if os.path.isdir(localPath + "/" + f):
-					self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName + "/" + f)
+					self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName + "/" )# + f)
 				# else if file, stay in same dir:
 				elif os.path.isfile(localPath + "/" + f):
 					self.SendToCloud(localPath + "/" + f, dbPath + "/" + dirName)
@@ -1358,7 +1358,7 @@ class Cold:
 			print " ## SendToCloud pathName:", pathName
 			print " ## SendToCloud fileName:", fileName
 			
-			self.SQLDataSource.mkdirs(dbPath)
+			#self.SQLDataSource.mkdirs(dbPath)
 			self.SQLDataSource.createFile(dbPath+'/'+fileName, PieceList)
 
 			if self.DebugOutput == True:
